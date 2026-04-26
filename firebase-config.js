@@ -1,12 +1,12 @@
-// ⚠️ CONFIG YANG SAMA PERSIS DENGAN YANG DI PANEL!
-const firebaseConfig = {
-  apiKey: "AIzaSyADAGKqAUsUrXXY4K0v5FYTKkBV_009Jb8",
-  authDomain: "oracle-market.firebaseapp.com",
-  databaseURL: "https://oracle-market-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "oracle-market",
-  storageBucket: "oracle-market.firebasestorage.app",
-  messagingSenderId: "1011127482006",
-  appId: "1:1011127482006:web:1bed17a08a66f52a0d34b7",
+// ⚠️ CONFIG ASLI - UPDATE INI!
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",
+  authDomain: "krynodexrat.firebaseapp.com",
+  databaseURL: "https://krynodexrat-default-rtdb.firebaseio.com",  // ← TAMBAHKAN INI
+  projectId: "krynodexrat",
+  storageBucket: "krynodexrat.firebasestorage.app",
+  messagingSenderId: "465327768431",
+  appId: "1:465327768431:web:3e5871b9f80dcbcad1de9a"
 };
 
 firebase.initializeApp(FIREBASE_CONFIG);
